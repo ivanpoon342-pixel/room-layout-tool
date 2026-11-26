@@ -11,6 +11,8 @@
     openings: [],
     notes: [],
     isDirty: false,
+    viewMode: '2d',
+    camera3d: null,
     selectedId: null,
     selectedOpeningId: null,
     selectedNoteId: null,
@@ -298,8 +300,25 @@
   }
 
   function refreshCanvas() {
-    const { Geometry, Renderer } = global.RoomLayout;
+    const { Geometry, Renderer, Viewer3D } = global.RoomLayout;
     latestAnalysis = Geometry.analyzeLayout(state.room, state.items, state.openings);
+    if (state.viewMode === '3d') {
+      Viewer3D.renderToElement(
+        dom.viewer3dCanvas,
+        state.room,
+        state.items,
+        state.openings,
+        state.notes,
+        latestAnalysis,
+        state.camera3d
+      );
+      renderStatusBanner(latestAnalysis);
+      dom.floatingBar.hidden = true;
+      dom.floatingOpeningBar.hidden = true;
+      dom.floatingNoteBar.hidden = true;
+      return;
+    }
+
     latestMetrics = Renderer.render(
       dom.svg,
       state.room,
@@ -311,6 +330,16 @@
     );
     renderStatusBanner(latestAnalysis);
     updateFloatingBars();
+  }
+
+  function setViewMode(mode) {
+    state.viewMode = mode === '3d' ? '3d' : '2d';
+    const is3d = state.viewMode === '3d';
+    dom.btnView2d.classList.toggle('is-active', !is3d);
+    dom.btnView3d.classList.toggle('is-active', is3d);
+    dom.svg.style.display = is3d ? 'none' : 'block';
+    dom.view3dWrap.hidden = !is3d;
+    refreshCanvas();
   }
 
   function clearAllSelections() {
@@ -976,6 +1005,7 @@
         if (!item) return;
 
         e.preventDefault();
+        const cmStart = clientToRoomCm(e.clientX, e.clientY);
         const now = Date.now();
         const tapKey = `item:${id}`;
         if (lastTapKey === tapKey && now - lastTapTime < 350) {
@@ -985,7 +1015,15 @@
           state.draggingId = null;
           canvasDrag = null;
           refreshCanvas();
-          openResizeModal(id);
+          if (e.shiftKey) {
+            openNoteModal({
+              mode: 'create-free',
+              x: Math.round(cmStart.x),
+              y: Math.round(cmStart.y)
+            });
+          } else {
+            openResizeModal(id);
+          }
           return;
         }
         lastTapKey = tapKey;
@@ -994,7 +1032,18 @@
         clearAllSelections();
         state.selectedId = id;
         state.draggingId = id;
-        const cmStart = clientToRoomCm(e.clientX, e.clientY);
+
+        // 收集当前贴附在此家具边缘或内部的可拖拽文字备注，拖动家具时自动跟随
+        const fp = Geometry.getFootprint(item);
+        const attachedNotes = state.notes
+          .filter(
+            (n) =>
+              n.x >= fp.x - 6 &&
+              n.x <= fp.right + 6 &&
+              n.y >= fp.y - 6 &&
+              n.y <= fp.bottom + 6
+          )
+          .map((n) => ({ id: n.id, dx: n.x - item.x, dy: n.y - item.y }));
 
         canvasDrag = {
           id,
@@ -1002,6 +1051,7 @@
           startClientY: e.clientY,
           offsetX: cmStart.x - item.x,
           offsetY: cmStart.y - item.y,
+          attachedNotes,
           moved: false
         };
         refreshCanvas();
@@ -1164,6 +1214,16 @@
           if (item.x !== snapped.x || item.y !== snapped.y) {
             item.x = snapped.x;
             item.y = snapped.y;
+            if (canvasDrag.attachedNotes && canvasDrag.attachedNotes.length > 0) {
+              for (let ai = 0; ai < canvasDrag.attachedNotes.length; ai++) {
+                const att = canvasDrag.attachedNotes[ai];
+                const noteObj = state.notes.find((n) => n.id === att.id);
+                if (noteObj) {
+                  noteObj.x = Math.round(item.x + att.dx);
+                  noteObj.y = Math.round(item.y + att.dy);
+                }
+              }
+            }
             refreshCanvas();
           }
         }
@@ -1376,20 +1436,89 @@
       showToast('已清空当前画布');
     });
 
-    // 截图保存
+    // 2D / 3D 视图切换
+    dom.btnView2d.addEventListener('click', () => setViewMode('2d'));
+    dom.btnView3d.addEventListener('click', () => setViewMode('3d'));
+
+    // 3D 视角快捷控制与拖拽旋转
+    const { Viewer3D } = global.RoomLayout;
+    let drag3d = null;
+    dom.viewer3dCanvas.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      drag3d = {
+        startX: e.clientX,
+        startY: e.clientY,
+        startYaw: state.camera3d.yaw,
+        startPitch: state.camera3d.pitch
+      };
+    });
+    global.addEventListener('pointermove', (e) => {
+      if (!drag3d) return;
+      const dx = e.clientX - drag3d.startX;
+      const dy = e.clientY - drag3d.startY;
+      state.camera3d.yaw = drag3d.startYaw + dx * 0.008;
+      state.camera3d.pitch = Viewer3D.clamp(drag3d.startPitch + dy * 0.006, 0.22, 1.42);
+      refreshCanvas();
+    });
+    global.addEventListener('pointerup', () => {
+      drag3d = null;
+    });
+    dom.viewer3dCanvas.addEventListener(
+      'wheel',
+      (e) => {
+        if (state.viewMode !== '3d') return;
+        e.preventDefault();
+        const factor = e.deltaY > 0 ? 0.92 : 1.08;
+        state.camera3d.zoom = Viewer3D.clamp(state.camera3d.zoom * factor, 0.55, 2.2);
+        refreshCanvas();
+      },
+      { passive: false }
+    );
+    dom.btn3dDefault.addEventListener('click', () => {
+      state.camera3d = Viewer3D.createCamera();
+      refreshCanvas();
+    });
+    dom.btn3dTop.addEventListener('click', () => {
+      state.camera3d.yaw = 0;
+      state.camera3d.pitch = 1.4;
+      state.camera3d.zoom = 1.0;
+      refreshCanvas();
+    });
+    dom.btn3dZoomIn.addEventListener('click', () => {
+      state.camera3d.zoom = Viewer3D.clamp(state.camera3d.zoom * 1.16, 0.55, 2.2);
+      refreshCanvas();
+    });
+    dom.btn3dZoomOut.addEventListener('click', () => {
+      state.camera3d.zoom = Viewer3D.clamp(state.camera3d.zoom * 0.86, 0.55, 2.2);
+      refreshCanvas();
+    });
+
+    // 截图保存（自动识别当前 2D / 3D 模式）
     dom.exportBtn.addEventListener('click', async () => {
       const activeLayout = Layouts.findLayout(state.store, state.store.activeLayoutId);
       const layoutName = activeLayout ? activeLayout.name : '';
       dom.exportBtn.disabled = true;
       try {
-        const filename = await Exporter.exportToPng(
-          state.room,
-          state.items,
-          state.openings,
-          state.notes,
-          latestAnalysis,
-          layoutName
-        );
+        const filename =
+          state.viewMode === '3d'
+            ? await Viewer3D.export3DPng(
+                state.room,
+                state.items,
+                state.openings,
+                state.notes,
+                latestAnalysis,
+                layoutName,
+                state.camera3d
+              )
+            : await Exporter.exportToPng(
+                state.room,
+                state.items,
+                state.openings,
+                state.notes,
+                latestAnalysis,
+                layoutName
+              );
         showToast(`已生成高清布局图：${filename}`);
       } finally {
         dom.exportBtn.disabled = false;
@@ -1402,7 +1531,15 @@
       if (state.selectedId) openResizeModal(state.selectedId);
     });
     dom.btnNote.addEventListener('click', () => {
-      if (state.selectedId) openNoteModal({ mode: 'edit-item', itemId: state.selectedId });
+      if (!state.selectedId) return;
+      const item = state.items.find((it) => it.id === state.selectedId);
+      if (!item) return;
+      const fp = global.RoomLayout.Geometry.getFootprint(item);
+      openNoteModal({
+        mode: 'create-free',
+        x: Math.round(fp.cx),
+        y: Math.round(fp.y + Math.min(20, fp.d * 0.35))
+      });
     });
     dom.btnDuplicate.addEventListener('click', duplicateSelected);
     dom.btnDelete.addEventListener('click', deleteSelected);
@@ -1589,6 +1726,14 @@
       roomArea: document.getElementById('room-area'),
       clearBtn: document.getElementById('btn-clear'),
       exportBtn: document.getElementById('btn-export'),
+      btnView2d: document.getElementById('btn-view-2d'),
+      btnView3d: document.getElementById('btn-view-3d'),
+      view3dWrap: document.getElementById('view-3d-wrap'),
+      viewer3dCanvas: document.getElementById('viewer-3d-canvas'),
+      btn3dDefault: document.getElementById('btn-3d-default'),
+      btn3dTop: document.getElementById('btn-3d-top'),
+      btn3dZoomIn: document.getElementById('btn-3d-zoom-in'),
+      btn3dZoomOut: document.getElementById('btn-3d-zoom-out'),
       layoutTabs: document.getElementById('layout-tabs'),
       saveLayoutBtn: document.getElementById('btn-save-layout'),
       newLayoutBtn: document.getElementById('btn-new-layout'),
@@ -1648,6 +1793,7 @@
       toast: document.getElementById('toast')
     };
 
+    state.camera3d = global.RoomLayout.Viewer3D.createCamera();
     loadInitialState();
     syncRoomInputs();
     renderLayoutBar();

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>简排 · 轻量化家装布局试排工具</title>
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=3">
 </head>
 <body>
   <div class="app-shell">
@@ -36,6 +36,10 @@
       </div>
 
       <div class="top-actions">
+        <div class="view-switch" role="group" aria-label="视图模式切换">
+          <button id="btn-view-2d" type="button" class="view-switch-btn is-active">2D 平面</button>
+          <button id="btn-view-3d" type="button" class="view-switch-btn">3D 立体</button>
+        </div>
         <button id="btn-clear" type="button" class="btn">清空</button>
         <button id="btn-export" type="button" class="btn btn-primary">截图保存</button>
       </div>
@@ -68,6 +72,18 @@
         <div id="canvas-stage" class="canvas-stage">
           <svg id="floorplan-svg" xmlns="http://www.w3.org/2000/svg"></svg>
 
+          <!-- 3D 立体查看器 -->
+          <div id="view-3d-wrap" class="view-3d-wrap" hidden>
+            <canvas id="viewer-3d-canvas"></canvas>
+            <div class="viewer-3d-hint">按住拖动 360° 旋转视角 · 滚轮缩放 · 前墙自动半透明避让</div>
+            <div class="viewer-3d-controls">
+              <button id="btn-3d-default" type="button" class="btn btn-sm">默认视角</button>
+              <button id="btn-3d-top" type="button" class="btn btn-sm">俯视鸟瞰</button>
+              <button id="btn-3d-zoom-in" type="button" class="btn btn-sm" title="放大">+</button>
+              <button id="btn-3d-zoom-out" type="button" class="btn btn-sm" title="缩小">−</button>
+            </div>
+          </div>
+
           <!-- 家具浮动操作条 -->
           <div id="floating-bar" class="floating-bar" hidden>
             <button id="act-rotate" type="button" class="float-btn" title="快捷键 R">旋转 90°</button>
@@ -92,8 +108,8 @@
         </div>
 
         <div class="canvas-legend">
-          <span>拖动四周控制点直接缩放 · 双击空白加文字备注 · 双击墙边标门口 · 绿线 ≥60cm · 红线 &lt;60cm</span>
-          <span>按住 Shift 拖动可禁用磁吸</span>
+          <span>拖动控制点缩放 · 点物件「备注」可贴字并拖动 · 双击空白加备注 · 双击墙边标门口 · 绿线 ≥60cm · 红线 &lt;60cm</span>
+          <span>按住 Shift 拖动禁用磁吸</span>
         </div>
       </section>
     </main>
@@ -271,11 +287,12 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <script src="js/catalog.js"></script>
-  <script src="js/geometry.js"></script>
-  <script src="js/layouts.js"></script>
-  <script src="js/renderer.js"></script>
-  <script src="js/exporter.js"></script>
-  <script src="js/app.js"></script>
+  <script src="js/catalog.js?v=3"></script>
+  <script src="js/geometry.js?v=3"></script>
+  <script src="js/layouts.js?v=3"></script>
+  <script src="js/renderer.js?v=3"></script>
+  <script src="js/viewer3d.js?v=3"></script>
+  <script src="js/exporter.js?v=3"></script>
+  <script src="js/app.js?v=3"></script>
 </body>
 </html>
