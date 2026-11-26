@@ -13,6 +13,7 @@
     isDirty: false,
     viewMode: '2d',
     camera3d: null,
+    vrCamera: null,
     selectedId: null,
     selectedOpeningId: null,
     selectedNoteId: null,
@@ -300,8 +301,9 @@
   }
 
   function refreshCanvas() {
-    const { Geometry, Renderer, Viewer3D } = global.RoomLayout;
+    const { Geometry, Renderer, Viewer3D, VRViewer } = global.RoomLayout;
     latestAnalysis = Geometry.analyzeLayout(state.room, state.items, state.openings);
+
     if (state.viewMode === '3d') {
       Viewer3D.renderToElement(
         dom.viewer3dCanvas,
@@ -311,6 +313,26 @@
         state.notes,
         latestAnalysis,
         state.camera3d
+      );
+      renderStatusBanner(latestAnalysis);
+      dom.floatingBar.hidden = true;
+      dom.floatingOpeningBar.hidden = true;
+      dom.floatingNoteBar.hidden = true;
+      return;
+    }
+
+    if (state.viewMode === 'vr') {
+      if (!state.vrCamera) {
+        state.vrCamera = VRViewer.createDefaultVRCamera(state.room, state.items, state.openings);
+      }
+      VRViewer.renderToElement(
+        dom.viewerVrCanvas,
+        state.room,
+        state.items,
+        state.openings,
+        state.notes,
+        latestAnalysis,
+        state.vrCamera
       );
       renderStatusBanner(latestAnalysis);
       dom.floatingBar.hidden = true;
@@ -332,13 +354,30 @@
     updateFloatingBars();
   }
 
+  function syncVRPostureLabel() {
+    if (!dom.btnVrPosture || !state.vrCamera) return;
+    dom.btnVrPosture.textContent = state.vrCamera.eyeZ <= 130 ? '坐姿 1.15m' : '站姿 1.65m';
+  }
+
   function setViewMode(mode) {
-    state.viewMode = mode === '3d' ? '3d' : '2d';
+    const { VRViewer } = global.RoomLayout;
+    state.viewMode = mode === '3d' || mode === 'vr' ? mode : '2d';
+    const is2d = state.viewMode === '2d';
     const is3d = state.viewMode === '3d';
-    dom.btnView2d.classList.toggle('is-active', !is3d);
+    const isVr = state.viewMode === 'vr';
+
+    dom.btnView2d.classList.toggle('is-active', is2d);
     dom.btnView3d.classList.toggle('is-active', is3d);
-    dom.svg.style.display = is3d ? 'none' : 'block';
+    dom.btnViewVr.classList.toggle('is-active', isVr);
+
+    dom.svg.style.display = is2d ? 'block' : 'none';
     dom.view3dWrap.hidden = !is3d;
+    dom.viewVrWrap.hidden = !isVr;
+
+    if (isVr && !state.vrCamera) {
+      state.vrCamera = VRViewer.createDefaultVRCamera(state.room, state.items, state.openings);
+      syncVRPostureLabel();
+    }
     refreshCanvas();
   }
 
@@ -739,6 +778,7 @@
     state.items = scene.items;
     state.openings = scene.openings;
     state.notes = scene.notes || [];
+    state.vrCamera = null;
     clearAllSelections();
     state.isDirty = false;
     closeResizeModal();
@@ -1436,12 +1476,13 @@
       showToast('已清空当前画布');
     });
 
-    // 2D / 3D 视图切换
+    // 2D / 3D / VR 视图切换
     dom.btnView2d.addEventListener('click', () => setViewMode('2d'));
     dom.btnView3d.addEventListener('click', () => setViewMode('3d'));
+    dom.btnViewVr.addEventListener('click', () => setViewMode('vr'));
 
     // 3D 视角快捷控制与拖拽旋转
-    const { Viewer3D } = global.RoomLayout;
+    const { Viewer3D, VRViewer } = global.RoomLayout;
     let drag3d = null;
     dom.viewer3dCanvas.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
@@ -1463,6 +1504,104 @@
     });
     global.addEventListener('pointerup', () => {
       drag3d = null;
+    });
+
+    // VR 第一人称漫游：小地图瞬移 + 360° 环顾 + 走动
+    let dragVr = null;
+    let miniMapDrag = false;
+    function teleportViaMiniMap(e) {
+      const rect = dom.viewerVrCanvas.getBoundingClientRect();
+      const hit = VRViewer.hitTestMiniMap(
+        e.clientX - rect.left,
+        e.clientY - rect.top,
+        rect.width,
+        rect.height,
+        state.room
+      );
+      if (!hit) return false;
+      state.vrCamera.x = hit.x;
+      state.vrCamera.y = hit.y;
+      refreshCanvas();
+      return true;
+    }
+
+    dom.viewerVrCanvas.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      if (!state.vrCamera) {
+        state.vrCamera = VRViewer.createDefaultVRCamera(state.room, state.items, state.openings);
+      }
+      if (teleportViaMiniMap(e)) {
+        miniMapDrag = true;
+        return;
+      }
+      dragVr = {
+        startX: e.clientX,
+        startY: e.clientY,
+        startYaw: state.vrCamera.yaw,
+        startPitch: state.vrCamera.pitch
+      };
+    });
+    global.addEventListener('pointermove', (e) => {
+      if (miniMapDrag) {
+        teleportViaMiniMap(e);
+        return;
+      }
+      if (!dragVr) return;
+      const dx = e.clientX - dragVr.startX;
+      const dy = e.clientY - dragVr.startY;
+      state.vrCamera.yaw = dragVr.startYaw - dx * 0.0065;
+      state.vrCamera.pitch = VRViewer.clamp(dragVr.startPitch + dy * 0.005, -0.72, 0.72);
+      refreshCanvas();
+    });
+    global.addEventListener('pointerup', () => {
+      dragVr = null;
+      miniMapDrag = false;
+    });
+    dom.viewerVrCanvas.addEventListener(
+      'wheel',
+      (e) => {
+        if (state.viewMode !== 'vr' || !state.vrCamera) return;
+        e.preventDefault();
+        state.vrCamera = VRViewer.moveVRCamera(state.vrCamera, e.deltaY < 0 ? 18 : -18, 0, state.room);
+        refreshCanvas();
+      },
+      { passive: false }
+    );
+    dom.btnVrFwd.addEventListener('click', () => {
+      state.vrCamera = VRViewer.moveVRCamera(state.vrCamera, 26, 0, state.room);
+      refreshCanvas();
+    });
+    dom.btnVrBack.addEventListener('click', () => {
+      state.vrCamera = VRViewer.moveVRCamera(state.vrCamera, -26, 0, state.room);
+      refreshCanvas();
+    });
+    dom.btnVrLeft.addEventListener('click', () => {
+      state.vrCamera = VRViewer.moveVRCamera(state.vrCamera, 0, -26, state.room);
+      refreshCanvas();
+    });
+    dom.btnVrRight.addEventListener('click', () => {
+      state.vrCamera = VRViewer.moveVRCamera(state.vrCamera, 0, 26, state.room);
+      refreshCanvas();
+    });
+    dom.btnVrPosture.addEventListener('click', () => {
+      if (!state.vrCamera) return;
+      state.vrCamera.eyeZ = state.vrCamera.eyeZ <= 130 ? 165 : 115;
+      syncVRPostureLabel();
+      refreshCanvas();
+    });
+    dom.btnVrDoor.addEventListener('click', () => {
+      const oldEye = state.vrCamera ? state.vrCamera.eyeZ : 165;
+      state.vrCamera = VRViewer.createDefaultVRCamera(state.room, state.items, state.openings);
+      state.vrCamera.eyeZ = oldEye;
+      refreshCanvas();
+    });
+    dom.btnVrCenter.addEventListener('click', () => {
+      if (!state.vrCamera) return;
+      state.vrCamera.x = Math.round(state.room.w / 2);
+      state.vrCamera.y = Math.round(state.room.d / 2);
+      state.vrCamera.pitch = -0.04;
+      refreshCanvas();
     });
     dom.viewer3dCanvas.addEventListener(
       'wheel',
@@ -1494,31 +1633,43 @@
       refreshCanvas();
     });
 
-    // 截图保存（自动识别当前 2D / 3D 模式）
+    // 截图保存（自动识别当前 2D / 3D / VR 模式）
     dom.exportBtn.addEventListener('click', async () => {
       const activeLayout = Layouts.findLayout(state.store, state.store.activeLayoutId);
       const layoutName = activeLayout ? activeLayout.name : '';
       dom.exportBtn.disabled = true;
       try {
-        const filename =
-          state.viewMode === '3d'
-            ? await Viewer3D.export3DPng(
-                state.room,
-                state.items,
-                state.openings,
-                state.notes,
-                latestAnalysis,
-                layoutName,
-                state.camera3d
-              )
-            : await Exporter.exportToPng(
-                state.room,
-                state.items,
-                state.openings,
-                state.notes,
-                latestAnalysis,
-                layoutName
-              );
+        let filename;
+        if (state.viewMode === 'vr') {
+          filename = await VRViewer.exportVRPng(
+            state.room,
+            state.items,
+            state.openings,
+            state.notes,
+            latestAnalysis,
+            layoutName,
+            state.vrCamera
+          );
+        } else if (state.viewMode === '3d') {
+          filename = await Viewer3D.export3DPng(
+            state.room,
+            state.items,
+            state.openings,
+            state.notes,
+            latestAnalysis,
+            layoutName,
+            state.camera3d
+          );
+        } else {
+          filename = await Exporter.exportToPng(
+            state.room,
+            state.items,
+            state.openings,
+            state.notes,
+            latestAnalysis,
+            layoutName
+          );
+        }
         showToast(`已生成高清布局图：${filename}`);
       } finally {
         dom.exportBtn.disabled = false;
@@ -1683,6 +1834,35 @@
         return;
       }
 
+      if (state.viewMode === 'vr') {
+        const lower = e.key.toLowerCase();
+        const step = e.shiftKey ? 36 : 18;
+        if (lower === 'w' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          state.vrCamera = VRViewer.moveVRCamera(state.vrCamera, step, 0, state.room);
+          refreshCanvas();
+          return;
+        }
+        if (lower === 's' || e.key === 'ArrowDown') {
+          e.preventDefault();
+          state.vrCamera = VRViewer.moveVRCamera(state.vrCamera, -step, 0, state.room);
+          refreshCanvas();
+          return;
+        }
+        if (lower === 'a' || e.key === 'ArrowLeft') {
+          e.preventDefault();
+          state.vrCamera = VRViewer.moveVRCamera(state.vrCamera, 0, -step, state.room);
+          refreshCanvas();
+          return;
+        }
+        if (lower === 'd' || e.key === 'ArrowRight') {
+          e.preventDefault();
+          state.vrCamera = VRViewer.moveVRCamera(state.vrCamera, 0, step, state.room);
+          refreshCanvas();
+          return;
+        }
+      }
+
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (state.selectedId || state.selectedOpeningId || state.selectedNoteId) {
           e.preventDefault();
@@ -1728,12 +1908,22 @@
       exportBtn: document.getElementById('btn-export'),
       btnView2d: document.getElementById('btn-view-2d'),
       btnView3d: document.getElementById('btn-view-3d'),
+      btnViewVr: document.getElementById('btn-view-vr'),
       view3dWrap: document.getElementById('view-3d-wrap'),
       viewer3dCanvas: document.getElementById('viewer-3d-canvas'),
       btn3dDefault: document.getElementById('btn-3d-default'),
       btn3dTop: document.getElementById('btn-3d-top'),
       btn3dZoomIn: document.getElementById('btn-3d-zoom-in'),
       btn3dZoomOut: document.getElementById('btn-3d-zoom-out'),
+      viewVrWrap: document.getElementById('view-vr-wrap'),
+      viewerVrCanvas: document.getElementById('viewer-vr-canvas'),
+      btnVrFwd: document.getElementById('btn-vr-fwd'),
+      btnVrBack: document.getElementById('btn-vr-back'),
+      btnVrLeft: document.getElementById('btn-vr-left'),
+      btnVrRight: document.getElementById('btn-vr-right'),
+      btnVrPosture: document.getElementById('btn-vr-posture'),
+      btnVrDoor: document.getElementById('btn-vr-door'),
+      btnVrCenter: document.getElementById('btn-vr-center'),
       layoutTabs: document.getElementById('layout-tabs'),
       saveLayoutBtn: document.getElementById('btn-save-layout'),
       newLayoutBtn: document.getElementById('btn-new-layout'),

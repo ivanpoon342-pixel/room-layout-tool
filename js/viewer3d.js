@@ -605,6 +605,7 @@
   global.RoomLayout.Viewer3D = {
     clamp,
     createCamera,
+    buildItemPrimitives,
     renderToElement,
     export3DPng
   };

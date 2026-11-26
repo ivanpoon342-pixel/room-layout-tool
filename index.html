@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>简排 · 轻量化家装布局试排工具</title>
-  <link rel="stylesheet" href="css/style.css?v=3">
+  <link rel="stylesheet" href="css/style.css?v=4">
 </head>
 <body>
   <div class="app-shell">
@@ -39,6 +39,7 @@
         <div class="view-switch" role="group" aria-label="视图模式切换">
           <button id="btn-view-2d" type="button" class="view-switch-btn is-active">2D 平面</button>
           <button id="btn-view-3d" type="button" class="view-switch-btn">3D 立体</button>
+          <button id="btn-view-vr" type="button" class="view-switch-btn">VR 漫游</button>
         </div>
         <button id="btn-clear" type="button" class="btn">清空</button>
         <button id="btn-export" type="button" class="btn btn-primary">截图保存</button>
@@ -81,6 +82,23 @@
               <button id="btn-3d-top" type="button" class="btn btn-sm">俯视鸟瞰</button>
               <button id="btn-3d-zoom-in" type="button" class="btn btn-sm" title="放大">+</button>
               <button id="btn-3d-zoom-out" type="button" class="btn btn-sm" title="缩小">−</button>
+            </div>
+          </div>
+
+          <!-- VR 第一人称漫游查看器 -->
+          <div id="view-vr-wrap" class="view-vr-wrap" hidden>
+            <canvas id="viewer-vr-canvas"></canvas>
+            <div class="vr-top-hint">按住拖动 360° 环顾 · WASD/方向键走动 · 点击右上小地图瞬移</div>
+            <div class="vr-walk-pad">
+              <button id="btn-vr-fwd" type="button" class="btn btn-sm" title="快捷键 W / ↑">前进</button>
+              <button id="btn-vr-back" type="button" class="btn btn-sm" title="快捷键 S / ↓">后退</button>
+              <button id="btn-vr-left" type="button" class="btn btn-sm" title="快捷键 A / ←">左移</button>
+              <button id="btn-vr-right" type="button" class="btn btn-sm" title="快捷键 D / →">右移</button>
+              <button id="btn-vr-posture" type="button" class="btn btn-sm btn-vr-posture">站姿 1.65m</button>
+            </div>
+            <div class="vr-presets">
+              <button id="btn-vr-door" type="button" class="btn btn-sm">门口视角</button>
+              <button id="btn-vr-center" type="button" class="btn btn-sm">房间中央</button>
             </div>
           </div>
 
@@ -287,12 +305,13 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <script src="js/catalog.js?v=3"></script>
-  <script src="js/geometry.js?v=3"></script>
-  <script src="js/layouts.js?v=3"></script>
-  <script src="js/renderer.js?v=3"></script>
-  <script src="js/viewer3d.js?v=3"></script>
-  <script src="js/exporter.js?v=3"></script>
-  <script src="js/app.js?v=3"></script>
+  <script src="js/catalog.js?v=4"></script>
+  <script src="js/geometry.js?v=4"></script>
+  <script src="js/layouts.js?v=4"></script>
+  <script src="js/renderer.js?v=4"></script>
+  <script src="js/viewer3d.js?v=4"></script>
+  <script src="js/vr.js?v=4"></script>
+  <script src="js/exporter.js?v=4"></script>
+  <script src="js/app.js?v=4"></script>
 </body>
 </html>
