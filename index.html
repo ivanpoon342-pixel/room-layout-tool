@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>简排 · 轻量化家装布局试排工具</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <!-- 入口 1：顶部房间尺寸输入区 -->
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">简</span>
+        <span class="brand-title">简排 · 家装试排</span>
+        <span class="brand-sub">零门槛空间验证</span>
+      </div>
+
+      <div class="room-inputs" aria-label="房间尺寸输入">
+        <label class="dim-field">
+          <span>长</span>
+          <input id="room-w" type="number" min="1" max="20" step="0.1" value="4.0" aria-label="房间长度(米)">
+          <span>m</span>
+        </label>
+        <label class="dim-field">
+          <span>宽</span>
+          <input id="room-d" type="number" min="1" max="20" step="0.1" value="3.4" aria-label="房间宽度(米)">
+          <span>m</span>
+        </label>
+        <label class="dim-field">
+          <span>高</span>
+          <input id="room-h" type="number" min="1.8" max="6" step="0.1" value="2.8" aria-label="房间层高(米)">
+          <span>m</span>
+        </label>
+        <span id="room-area" class="area-badge">13.6 ㎡</span>
+      </div>
+
+      <div class="top-actions">
+        <button id="btn-clear" type="button" class="btn">清空</button>
+        <button id="btn-export" type="button" class="btn btn-primary">截图保存</button>
+      </div>
+    </header>
+
+    <!-- 多布局方案栏：保存、新增、切换继续编辑 -->
+    <div class="layout-bar" aria-label="布局方案管理">
+      <span class="layout-bar-label">我的布局</span>
+      <div id="layout-tabs" class="layout-tabs"></div>
+      <div class="layout-bar-actions">
+        <button id="btn-save-layout" type="button" class="btn btn-sm btn-save">保存布局</button>
+        <button id="btn-new-layout" type="button" class="btn btn-sm">+ 新增布局</button>
+      </div>
+    </div>
+
+    <main class="workspace">
+      <!-- 入口 2：左侧带标准尺寸标注的常用家具图标栏 -->
+      <aside class="palette" aria-label="常用家具栏">
+        <div id="category-tabs" class="category-tabs"></div>
+        <div id="furniture-grid" class="furniture-grid"></div>
+      </aside>
+
+      <!-- 入口 3：右侧等比例平面画布区 -->
+      <section class="canvas-panel" aria-label="等比例平面画布">
+        <div id="status-bar" class="status-bar is-ok">
+          <span class="status-dot"></span>
+          <span class="status-summary">待摆放家具 · 请从左侧拖入或点击家具</span>
+        </div>
+
+        <div id="canvas-stage" class="canvas-stage">
+          <svg id="floorplan-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+
+          <!-- 家具浮动操作条 -->
+          <div id="floating-bar" class="floating-bar" hidden>
+            <button id="act-rotate" type="button" class="float-btn" title="快捷键 R">旋转 90°</button>
+            <button id="act-resize" type="button" class="float-btn">改尺寸</button>
+            <button id="act-duplicate" type="button" class="float-btn">复制</button>
+            <button id="act-delete" type="button" class="float-btn is-danger" title="快捷键 Delete">删除</button>
+          </div>
+
+          <!-- 墙边门口浮动操作条 -->
+          <div id="floating-opening-bar" class="floating-bar" hidden>
+            <button id="open-act-flip" type="button" class="float-btn">切换开向</button>
+            <button id="open-act-edit" type="button" class="float-btn">改尺寸/朝向</button>
+            <button id="open-act-delete" type="button" class="float-btn is-danger">删除</button>
+          </div>
+        </div>
+
+        <div class="canvas-legend">
+          <span>拖拽或点击放置 · 双击家具改尺寸 · 双击墙边标门口 · 绿线 ≥60cm 舒适 · 红线 &lt;60cm 过窄或超占</span>
+          <span>按住 Shift 拖动可禁用磁吸</span>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- 一键自定义修改家具尺寸浮层 -->
+  <div id="resize-modal" class="modal-backdrop" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="resize-title">
+      <div class="modal-header">
+        <h2 id="resize-title" class="modal-title">自定义尺寸</h2>
+        <button id="modal-close" type="button" class="modal-close" aria-label="关闭">&times;</button>
+      </div>
+
+      <div id="preset-row" class="preset-row">
+        <span class="field-label">常用标准规格（点击即改）</span>
+        <div id="preset-chips" class="preset-chips"></div>
+      </div>
+
+      <label class="form-field">
+        <span>家具名称</span>
+        <input id="edit-name" type="text" maxlength="16">
+      </label>
+
+      <div class="form-grid">
+        <label class="form-field">
+          <span>长 (cm)</span>
+          <input id="edit-w" type="number" min="3" max="600" step="1">
+        </label>
+        <label class="form-field">
+          <span>宽 (cm)</span>
+          <input id="edit-d" type="number" min="3" max="600" step="1">
+        </label>
+        <label class="form-field">
+          <span>高 (cm)</span>
+          <input id="edit-h" type="number" min="10" max="500" step="1">
+        </label>
+      </div>
+
+      <div class="modal-footer">
+        <button id="modal-reset" type="button" class="btn">恢复标准尺寸</button>
+        <button id="modal-done" type="button" class="btn btn-primary">完成</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 墙边门口定制浮层 -->
+  <div id="opening-modal" class="modal-backdrop" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="opening-modal-title">
+      <div class="modal-header">
+        <h2 id="opening-modal-title" class="modal-title">定制门口标记</h2>
+        <button id="opening-modal-close" type="button" class="modal-close" aria-label="关闭">&times;</button>
+      </div>
+
+      <div class="preset-row">
+        <span class="field-label">常用门洞宽度（点击即改）</span>
+        <div id="opening-preset-chips" class="preset-chips">
+          <button type="button" class="preset-chip" data-width="75">75cm (卫浴门)</button>
+          <button type="button" class="preset-chip" data-width="85">85cm (卧室门)</button>
+          <button type="button" class="preset-chip" data-width="100">100cm (大门口)</button>
+        </div>
+      </div>
+
+      <div class="form-grid-2">
+        <label class="form-field">
+          <span>门口名称</span>
+          <input id="open-edit-name" type="text" maxlength="14" placeholder="如：卫生间门">
+        </label>
+        <label class="form-field">
+          <span>门洞宽度 (cm)</span>
+          <input id="open-edit-width" type="number" min="30" max="400" step="1">
+        </label>
+      </div>
+
+      <div class="form-grid">
+        <label class="form-field">
+          <span>所在墙边</span>
+          <select id="open-edit-wall">
+            <option value="top">上墙</option>
+            <option value="bottom">下墙</option>
+            <option value="left">左墙</option>
+            <option value="right">右墙</option>
+          </select>
+        </label>
+        <label class="form-field">
+          <span>开门方式</span>
+          <select id="open-edit-swing">
+            <option value="in">内开扇门</option>
+            <option value="out">外开扇门</option>
+            <option value="none">推拉 / 门洞</option>
+          </select>
+        </label>
+        <label class="form-field">
+          <span>门轴位置</span>
+          <select id="open-edit-hinge">
+            <option value="start">左/上侧</option>
+            <option value="end">右/下侧</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="modal-footer modal-footer-end">
+        <button id="opening-modal-done" type="button" class="btn btn-primary">完成</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 保存/重命名布局弹窗 -->
+  <div id="layout-modal" class="modal-backdrop" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="layout-modal-title">
+      <div class="modal-header">
+        <h2 id="layout-modal-title" class="modal-title">保存布局方案</h2>
+        <button id="layout-modal-close" type="button" class="modal-close" aria-label="关闭">&times;</button>
+      </div>
+
+      <div class="preset-row">
+        <span class="field-label">快捷名称（点击即填）</span>
+        <div id="layout-quick-chips" class="preset-chips">
+          <button type="button" class="preset-chip" data-name="厕所">厕所</button>
+          <button type="button" class="preset-chip" data-name="主卧">主卧</button>
+          <button type="button" class="preset-chip" data-name="次卧">次卧</button>
+          <button type="button" class="preset-chip" data-name="客厅">客厅</button>
+          <button type="button" class="preset-chip" data-name="书房">书房</button>
+          <button type="button" class="preset-chip" data-name="厨房">厨房</button>
+        </div>
+      </div>
+
+      <label class="form-field">
+        <span>布局名称</span>
+        <input id="layout-name-input" type="text" maxlength="16" placeholder="如：厕所、主卧">
+      </label>
+
+      <div class="modal-footer">
+        <button id="layout-modal-cancel" type="button" class="btn">取消</button>
+        <button id="layout-modal-confirm" type="button" class="btn btn-primary">确定保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="js/catalog.js"></script>
+  <script src="js/geometry.js"></script>
+  <script src="js/layouts.js"></script>
+  <script src="js/renderer.js"></script>
+  <script src="js/exporter.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
