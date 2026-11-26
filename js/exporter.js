@@ -168,7 +168,40 @@
     }
   }
 
-  function exportToPng(room, items, openings, analysis, layoutName) {
+  function drawNotesCanvas(ctx, notes, originX, originY, scale) {
+    const list = Array.isArray(notes) ? notes : [];
+    for (let i = 0; i < list.length; i++) {
+      const n = list[i];
+      const text = (n.text || '').trim();
+      if (!text) continue;
+      const px = originX + n.x * scale;
+      const py = originY + n.y * scale;
+      ctx.save();
+      ctx.font = `600 12px ${FONT_FAMILY}`;
+      const bw = Math.max(52, ctx.measureText(text).width + 28);
+      const bh = 26;
+      ctx.beginPath();
+      ctx.roundRect(px - bw / 2, py - bh / 2, bw, bh, 13);
+      ctx.fillStyle = '#fffbeb';
+      ctx.fill();
+      ctx.strokeStyle = '#d97706';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+
+      ctx.fillStyle = '#d97706';
+      ctx.beginPath();
+      ctx.arc(px - bw / 2 + 11, py, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#78350f';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, px + 5, py + 0.5);
+      ctx.restore();
+    }
+  }
+
+  function exportToPng(room, items, openings, notes, analysis, layoutName) {
     const { Geometry, Catalog } = global.RoomLayout;
     const openingList = Array.isArray(openings) ? openings : [];
 
@@ -454,9 +487,29 @@
         ctx.fillText(compactStr, pxX + pxW / 2, pxY + pxD / 2 + 0.5);
         ctx.restore();
       }
+
+      const itemNote = typeof item.note === 'string' ? item.note.trim() : '';
+      if (itemNote) {
+        ctx.save();
+        ctx.font = `600 11px ${FONT_FAMILY}`;
+        const nw = Math.max(48, ctx.measureText(itemNote).width + 16);
+        const ny = pxY + pxD + 8;
+        ctx.beginPath();
+        ctx.roundRect(pxX + pxW / 2 - nw / 2, ny, nw, 20, 10);
+        ctx.fillStyle = '#fffbeb';
+        ctx.fill();
+        ctx.strokeStyle = '#d97706';
+        ctx.lineWidth = 1.1;
+        ctx.stroke();
+        ctx.fillStyle = '#92400e';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(itemNote, pxX + pxW / 2, ny + 10.5);
+        ctx.restore();
+      }
     }
 
-    // 5. 间距标注
+    // 5. 间距标注 & 自由文字备注
     for (let i = 0; i < analysis.narrowLines.length; i++) {
       const c = analysis.narrowLines[i];
       drawDimensionLineCanvas(
@@ -469,6 +522,8 @@
         true
       );
     }
+
+    drawNotesCanvas(ctx, notes, originX, originY, scale);
 
     // 6. 页脚图例
     const footerY = logicalH - footerH;

@@ -328,6 +328,14 @@ body {
   cursor: grabbing;
 }
 
+.note-node {
+  cursor: grab;
+}
+
+.note-node:active {
+  cursor: grabbing;
+}
+
 .form-grid-2 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

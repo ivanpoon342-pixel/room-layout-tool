@@ -72,6 +72,7 @@
           <div id="floating-bar" class="floating-bar" hidden>
             <button id="act-rotate" type="button" class="float-btn" title="快捷键 R">旋转 90°</button>
             <button id="act-resize" type="button" class="float-btn">改尺寸</button>
+            <button id="act-note" type="button" class="float-btn">备注</button>
             <button id="act-duplicate" type="button" class="float-btn">复制</button>
             <button id="act-delete" type="button" class="float-btn is-danger" title="快捷键 Delete">删除</button>
           </div>
@@ -82,10 +83,16 @@
             <button id="open-act-edit" type="button" class="float-btn">改尺寸/朝向</button>
             <button id="open-act-delete" type="button" class="float-btn is-danger">删除</button>
           </div>
+
+          <!-- 自由文字备注浮动操作条 -->
+          <div id="floating-note-bar" class="floating-bar" hidden>
+            <button id="note-act-edit" type="button" class="float-btn">编辑文字</button>
+            <button id="note-act-delete" type="button" class="float-btn is-danger">删除</button>
+          </div>
         </div>
 
         <div class="canvas-legend">
-          <span>拖拽或点击放置 · 双击家具改尺寸 · 双击墙边标门口 · 绿线 ≥60cm 舒适 · 红线 &lt;60cm 过窄或超占</span>
+          <span>拖动四周控制点直接缩放 · 双击空白加文字备注 · 双击墙边标门口 · 绿线 ≥60cm · 红线 &lt;60cm</span>
           <span>按住 Shift 拖动可禁用磁吸</span>
         </div>
       </section>
@@ -105,10 +112,16 @@
         <div id="preset-chips" class="preset-chips"></div>
       </div>
 
-      <label class="form-field">
-        <span>家具名称</span>
-        <input id="edit-name" type="text" maxlength="16">
-      </label>
+      <div class="form-grid-2">
+        <label class="form-field">
+          <span>家具名称</span>
+          <input id="edit-name" type="text" maxlength="16">
+        </label>
+        <label class="form-field">
+          <span>备注标示（可选）</span>
+          <input id="edit-note" type="text" maxlength="20" placeholder="如：留插座 / 防爆膜">
+        </label>
+      </div>
 
       <div class="form-grid">
         <label class="form-field">
@@ -221,6 +234,37 @@
       <div class="modal-footer">
         <button id="layout-modal-cancel" type="button" class="btn">取消</button>
         <button id="layout-modal-confirm" type="button" class="btn btn-primary">确定保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 位置/物件文字备注弹窗 -->
+  <div id="note-modal" class="modal-backdrop" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="note-modal-title">
+      <div class="modal-header">
+        <h2 id="note-modal-title" class="modal-title">添加文字备注</h2>
+        <button id="note-modal-close" type="button" class="modal-close" aria-label="关闭">&times;</button>
+      </div>
+
+      <div class="preset-row">
+        <span class="field-label">常用装修标注（点击即填）</span>
+        <div id="note-quick-chips" class="preset-chips">
+          <button type="button" class="preset-chip" data-text="预留地漏">预留地漏</button>
+          <button type="button" class="preset-chip" data-text="干湿分离">干湿分离</button>
+          <button type="button" class="preset-chip" data-text="预留插座">预留插座</button>
+          <button type="button" class="preset-chip" data-text="挡水条位置">挡水条位置</button>
+          <button type="button" class="preset-chip" data-text="推拉门轨道">推拉门轨道</button>
+        </div>
+      </div>
+
+      <label class="form-field">
+        <span>备注内容</span>
+        <input id="note-text-input" type="text" maxlength="24" placeholder="输入想标示的文字，如：地漏、开关位置">
+      </label>
+
+      <div class="modal-footer">
+        <button id="note-modal-cancel" type="button" class="btn">取消</button>
+        <button id="note-modal-confirm" type="button" class="btn btn-primary">确定</button>
       </div>
     </div>
   </div>

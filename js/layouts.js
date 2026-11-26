@@ -1,6 +1,6 @@
 /**
  * 多布局保存、新增、切换与旧版数据迁移管理模块
- * 全部持久化至 localStorage，支持无注册本地保存并继续编辑
+ * 全部持久化至 localStorage，支持无注册本地保存并继续编辑（含家具、门口、自由文字备注）
  */
 (function (global) {
   'use strict';
@@ -34,7 +34,10 @@
           Number.isFinite(it.w) &&
           Number.isFinite(it.d)
       )
-      .map((it) => ({ ...it }));
+      .map((it) => ({
+        ...it,
+        note: typeof it.note === 'string' ? it.note : ''
+      }));
   }
 
   function cloneOpenings(openings) {
@@ -60,6 +63,26 @@
       }));
   }
 
+  function cloneNotes(notes) {
+    if (!Array.isArray(notes)) return [];
+    return notes
+      .filter(
+        (n) =>
+          n &&
+          typeof n.id === 'string' &&
+          typeof n.text === 'string' &&
+          n.text.trim() &&
+          Number.isFinite(n.x) &&
+          Number.isFinite(n.y)
+      )
+      .map((n) => ({
+        id: n.id,
+        x: Math.round(n.x),
+        y: Math.round(n.y),
+        text: n.text.trim()
+      }));
+  }
+
   function createEmptyStore() {
     return {
       layouts: [],
@@ -67,7 +90,8 @@
       draft: {
         room: cloneRoom(DEFAULT_ROOM),
         items: [],
-        openings: []
+        openings: [],
+        notes: []
       }
     };
   }
@@ -78,7 +102,8 @@
     store.draft = {
       room: cloneRoom(v1Data.room),
       items: cloneItems(v1Data.items),
-      openings: cloneOpenings(v1Data.openings)
+      openings: cloneOpenings(v1Data.openings),
+      notes: cloneNotes(v1Data.notes)
     };
     return store;
   }
@@ -94,6 +119,7 @@
             room: cloneRoom(l.room),
             items: cloneItems(l.items),
             openings: cloneOpenings(l.openings),
+            notes: cloneNotes(l.notes),
             updatedAt: Number(l.updatedAt) || Date.now()
           }))
       : [];
@@ -104,12 +130,14 @@
       ? {
           room: cloneRoom(raw.draft.room),
           items: cloneItems(raw.draft.items),
-          openings: cloneOpenings(raw.draft.openings)
+          openings: cloneOpenings(raw.draft.openings),
+          notes: cloneNotes(raw.draft.notes)
         }
       : {
           room: cloneRoom(DEFAULT_ROOM),
           items: [],
-          openings: []
+          openings: [],
+          notes: []
         };
 
     return {
@@ -137,13 +165,11 @@
     return store.layouts.find((l) => l.id === id) || null;
   }
 
-  /**
-   * 保存当前编辑中的布局：若已有 activeLayoutId 则直接原地更新；否则新建保存方案
-   */
   function saveCurrentLayout(store, payload) {
     const room = cloneRoom(payload.room);
     const items = cloneItems(payload.items);
     const openings = cloneOpenings(payload.openings);
+    const notes = cloneNotes(payload.notes);
     const cleanName = typeof payload.name === 'string' ? payload.name.trim() : '';
 
     const existing = findLayout(store, store.activeLayoutId);
@@ -152,8 +178,14 @@
       existing.room = room;
       existing.items = items;
       existing.openings = openings;
+      existing.notes = notes;
       existing.updatedAt = Date.now();
-      store.draft = { room: cloneRoom(room), items: cloneItems(items), openings: cloneOpenings(openings) };
+      store.draft = {
+        room: cloneRoom(room),
+        items: cloneItems(items),
+        openings: cloneOpenings(openings),
+        notes: cloneNotes(notes)
+      };
       return { layout: existing, created: false };
     }
 
@@ -164,24 +196,28 @@
       room,
       items,
       openings,
+      notes,
       updatedAt: Date.now()
     };
     store.layouts.push(created);
     store.activeLayoutId = created.id;
-    store.draft = { room: cloneRoom(room), items: cloneItems(items), openings: cloneOpenings(openings) };
+    store.draft = {
+      room: cloneRoom(room),
+      items: cloneItems(items),
+      openings: cloneOpenings(openings),
+      notes: cloneNotes(notes)
+    };
     return { layout: created, created: true };
   }
 
-  /**
-   * 自动回写或保存当前未丢失数据（在新建/切换布局前调用）
-   */
-  function preserveCurrentIfNeeded(store, currentRoom, currentItems, currentOpenings, isDirty) {
+  function preserveCurrentIfNeeded(store, currentRoom, currentItems, currentOpenings, isDirty, currentNotes) {
     const existing = findLayout(store, store.activeLayoutId);
     if (existing) {
       if (isDirty) {
         existing.room = cloneRoom(currentRoom);
         existing.items = cloneItems(currentItems);
         existing.openings = cloneOpenings(currentOpenings);
+        existing.notes = cloneNotes(currentNotes);
         existing.updatedAt = Date.now();
       }
       return null;
@@ -189,43 +225,38 @@
 
     const hasContent =
       (Array.isArray(currentItems) && currentItems.length > 0) ||
-      (Array.isArray(currentOpenings) && currentOpenings.length > 0);
+      (Array.isArray(currentOpenings) && currentOpenings.length > 0) ||
+      (Array.isArray(currentNotes) && currentNotes.length > 0);
     if (hasContent) {
       const autoName = getNextDefaultName(store.layouts);
       saveCurrentLayout(store, {
         name: autoName,
         room: currentRoom,
         items: currentItems,
-        openings: currentOpenings
+        openings: currentOpenings,
+        notes: currentNotes
       });
       return autoName;
     }
     return null;
   }
 
-  /**
-   * 新增空白布局（保留/自动暂存当前成果，重置为默认空画布）
-   */
-  function createNewLayout(store, currentRoom, currentItems, currentOpenings, isDirty) {
+  function createNewLayout(store, currentRoom, currentItems, currentOpenings, isDirty, currentNotes) {
     const autoSavedName = preserveCurrentIfNeeded(
       store,
       currentRoom,
       currentItems,
       currentOpenings,
-      isDirty
+      isDirty,
+      currentNotes
     );
     store.activeLayoutId = null;
     const room = cloneRoom(DEFAULT_ROOM);
-    const items = [];
-    const openings = [];
-    store.draft = { room: cloneRoom(room), items: [], openings: [] };
-    return { room, items, openings, autoSavedName };
+    store.draft = { room: cloneRoom(room), items: [], openings: [], notes: [] };
+    return { room, items: [], openings: [], notes: [], autoSavedName };
   }
 
-  /**
-   * 切换到指定已保存布局继续编辑
-   */
-  function switchLayout(store, targetId, currentRoom, currentItems, currentOpenings, isDirty) {
+  function switchLayout(store, targetId, currentRoom, currentItems, currentOpenings, isDirty, currentNotes) {
     const target = findLayout(store, targetId);
     if (!target) return null;
 
@@ -236,7 +267,8 @@
         currentRoom,
         currentItems,
         currentOpenings,
-        isDirty
+        isDirty,
+        currentNotes
       );
     }
 
@@ -244,9 +276,15 @@
     const room = cloneRoom(target.room);
     const items = cloneItems(target.items);
     const openings = cloneOpenings(target.openings);
-    store.draft = { room: cloneRoom(room), items: cloneItems(items), openings: cloneOpenings(openings) };
+    const notes = cloneNotes(target.notes);
+    store.draft = {
+      room: cloneRoom(room),
+      items: cloneItems(items),
+      openings: cloneOpenings(openings),
+      notes: cloneNotes(notes)
+    };
 
-    return { layout: target, room, items, openings, autoSavedName };
+    return { layout: target, room, items, openings, notes, autoSavedName };
   }
 
   function renameLayout(store, layoutId, newName) {
@@ -270,16 +308,29 @@
         const room = cloneRoom(fallback.room);
         const items = cloneItems(fallback.items);
         const openings = cloneOpenings(fallback.openings);
-        store.draft = { room: cloneRoom(room), items: cloneItems(items), openings: cloneOpenings(openings) };
-        return { removed, switchedTo: fallback, room, items, openings };
+        const notes = cloneNotes(fallback.notes);
+        store.draft = {
+          room: cloneRoom(room),
+          items: cloneItems(items),
+          openings: cloneOpenings(openings),
+          notes: cloneNotes(notes)
+        };
+        return { removed, switchedTo: fallback, room, items, openings, notes };
       }
       store.activeLayoutId = null;
       const room = cloneRoom(DEFAULT_ROOM);
-      store.draft = { room: cloneRoom(room), items: [], openings: [] };
-      return { removed, switchedTo: null, room, items: [], openings: [] };
+      store.draft = { room: cloneRoom(room), items: [], openings: [], notes: [] };
+      return { removed, switchedTo: null, room, items: [], openings: [], notes: [] };
     }
 
-    return { removed, switchedTo: findLayout(store, store.activeLayoutId), room: null, items: null, openings: null };
+    return {
+      removed,
+      switchedTo: findLayout(store, store.activeLayoutId),
+      room: null,
+      items: null,
+      openings: null,
+      notes: null
+    };
   }
 
   function loadStore(storage) {
@@ -306,7 +357,7 @@
     try {
       ls.setItem(STORAGE_KEY_V2, JSON.stringify(store));
     } catch (e) {
-      // 隐私模式或空间已满忽略
+      // 忽略异常
     }
   }
 
@@ -317,6 +368,7 @@
     cloneRoom,
     cloneItems,
     cloneOpenings,
+    cloneNotes,
     createEmptyStore,
     migrateFromLegacy,
     getNextDefaultName,

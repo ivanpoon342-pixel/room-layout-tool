@@ -1,5 +1,5 @@
 /**
- * 应用主控逻辑：多布局保存/新增/切换、墙边门口标记与屏风定制、拖拽测距与 LocalStorage 持久化
+ * 应用主控逻辑：多布局保存/新增/切换、直接拖拽缩放控制点、墙边门口定制、自由文字备注与持久化
  */
 (function (global) {
   'use strict';
@@ -9,16 +9,21 @@
     room: { w: 400, d: 340, h: 280 }, // cm
     items: [],
     openings: [],
+    notes: [],
     isDirty: false,
     selectedId: null,
     selectedOpeningId: null,
+    selectedNoteId: null,
     draggingId: null,
+    resizingId: null,
     draggingOpeningId: null,
+    draggingNoteId: null,
     flashId: null,
     activeCategory: 'all',
     editingId: null,
     editingOpeningId: null,
-    layoutModalMode: null // 'save' | 'rename'
+    layoutModalMode: null,
+    noteModalContext: null // { mode: 'create-free' | 'edit-free' | 'edit-item', x?, y?, noteId?, itemId? }
   };
 
   let latestMetrics = null;
@@ -41,13 +46,22 @@
     return (cm / 100).toFixed(1);
   }
 
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
   function syncDraftAndPersist(markDirty) {
     const { Layouts } = global.RoomLayout;
     if (markDirty) state.isDirty = true;
     state.store.draft = {
       room: Layouts.cloneRoom(state.room),
       items: Layouts.cloneItems(state.items),
-      openings: Layouts.cloneOpenings(state.openings)
+      openings: Layouts.cloneOpenings(state.openings),
+      notes: Layouts.cloneNotes(state.notes)
     };
     Layouts.persistStore(state.store);
     renderLayoutBar();
@@ -63,12 +77,15 @@
       state.room = Layouts.cloneRoom(active.room);
       state.items = Layouts.cloneItems(active.items);
       state.openings = Layouts.cloneOpenings(active.openings);
+      state.notes = Layouts.cloneNotes(active.notes);
       state.isDirty = false;
     } else {
       state.room = Layouts.cloneRoom(store.draft.room);
       state.items = Layouts.cloneItems(store.draft.items);
       state.openings = Layouts.cloneOpenings(store.draft.openings);
-      state.isDirty = state.items.length > 0 || state.openings.length > 0;
+      state.notes = Layouts.cloneNotes(store.draft.notes);
+      state.isDirty =
+        state.items.length > 0 || state.openings.length > 0 || state.notes.length > 0;
     }
   }
 
@@ -94,14 +111,6 @@
     dom.roomArea.textContent = `${area} ㎡`;
   }
 
-  function escapeHtml(str) {
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
-
   function renderLayoutBar() {
     if (!dom.layoutTabs || !state.store) return;
     const { Layouts } = global.RoomLayout;
@@ -121,10 +130,7 @@
       })
       .join('');
 
-    const draftPill = !activeId
-      ? `<span class="layout-pill is-draft">未保存新布局</span>`
-      : '';
-
+    const draftPill = !activeId ? `<span class="layout-pill is-draft">未保存新布局</span>` : '';
     dom.layoutTabs.innerHTML = tabsHtml + draftPill;
 
     const activeLayout = Layouts.findLayout(state.store, activeId);
@@ -156,7 +162,12 @@
         const ih = Math.max(6, item.d * iconScale);
         const ix = (52 - iw) / 2;
         const iy = (40 - ih) / 2;
-        const sizeText = item.kind === 'opening' ? `${item.w}cm 门洞` : `${item.w}×${item.d}cm`;
+        const sizeText =
+          item.kind === 'opening'
+            ? `${item.w}cm 门洞`
+            : item.kind === 'note'
+            ? '双击空白也可加'
+            : `${item.w}×${item.d}cm`;
         return [
           `<button type="button" class="furniture-card" data-catalog-id="${item.id}" title="拖拽或点击放入「${item.name}」">`,
           `<div class="card-icon">`,
@@ -179,10 +190,10 @@
     if (warnings.length === 0) {
       dom.statusBar.className = 'status-bar is-ok';
       const extra = analysis.coverageRatio > 0.65 ? ' · 空间占用偏高' : ' · 层高与间距正常';
-      const emptyNote =
-        state.items.length === 0 && state.openings.length === 0
-          ? '待摆放家具 · 请从左侧拖入或点击家具（双击墙边可标门口）'
-          : `布局可行 · 家具占地 ${occPct}%${extra}`;
+      const hasAny = state.items.length > 0 || state.openings.length > 0 || state.notes.length > 0;
+      const emptyNote = !hasAny
+        ? '待摆放家具 · 拖入家具后可拖动控制点直接缩放，双击空白加备注'
+        : `布局可行 · 家具占地 ${occPct}%${extra}`;
       dom.statusBar.innerHTML = `<span class="status-dot"></span><span class="status-summary">${emptyNote}</span>`;
       return;
     }
@@ -206,9 +217,10 @@
     const { Geometry } = global.RoomLayout;
     const bar = dom.floatingBar;
     const openBar = dom.floatingOpeningBar;
+    const noteBar = dom.floatingNoteBar;
 
-    // 1. 家具浮动操作条
-    if (!state.selectedId || state.draggingId || !latestMetrics) {
+    // 1. 家具浮动条
+    if (!state.selectedId || state.draggingId || state.resizingId || !latestMetrics) {
       bar.hidden = true;
     } else {
       const item = state.items.find((it) => it.id === state.selectedId);
@@ -222,19 +234,19 @@
         const itemCenterX = originX + fp.cx * scale;
 
         bar.hidden = false;
-        const barW = bar.offsetWidth || 248;
+        const barW = bar.offsetWidth || 280;
         const barH = bar.offsetHeight || 38;
         const left = clamp(itemCenterX - barW / 2, 10, Math.max(10, svgWidth - barW - 10));
-        let top = itemTop - barH - 10;
+        let top = itemTop - barH - 14;
         if (top < 8) {
-          top = Math.min(svgHeight - barH - 8, itemBottom + 10);
+          top = Math.min(svgHeight - barH - 8, itemBottom + 14);
         }
         bar.style.left = `${Math.round(left)}px`;
         bar.style.top = `${Math.round(top)}px`;
       }
     }
 
-    // 2. 墙边门口浮动操作条
+    // 2. 墙边门口浮动条
     if (!state.selectedOpeningId || state.draggingOpeningId || !latestMetrics) {
       openBar.hidden = true;
     } else {
@@ -251,12 +263,36 @@
         const bw = openBar.offsetWidth || 210;
         const bh = openBar.offsetHeight || 36;
         const left = clamp(cx - bw / 2, 10, Math.max(10, svgWidth - bw - 10));
-        let top = cy - bh - 16;
+        let top = cy - bh - 18;
         if (top < 8) {
-          top = Math.min(svgHeight - bh - 8, cy + 16);
+          top = Math.min(svgHeight - bh - 8, cy + 18);
         }
         openBar.style.left = `${Math.round(left)}px`;
         openBar.style.top = `${Math.round(top)}px`;
+      }
+    }
+
+    // 3. 自由文字备注浮动条
+    if (!state.selectedNoteId || state.draggingNoteId || !latestMetrics) {
+      noteBar.hidden = true;
+    } else {
+      const n = state.notes.find((it) => it.id === state.selectedNoteId);
+      if (!n) {
+        noteBar.hidden = true;
+      } else {
+        const { originX, originY, scale, svgWidth, svgHeight } = latestMetrics;
+        const cx = originX + n.x * scale;
+        const cy = originY + n.y * scale;
+        noteBar.hidden = false;
+        const bw = noteBar.offsetWidth || 130;
+        const bh = noteBar.offsetHeight || 34;
+        const left = clamp(cx - bw / 2, 10, Math.max(10, svgWidth - bw - 10));
+        let top = cy - bh - 18;
+        if (top < 8) {
+          top = Math.min(svgHeight - bh - 8, cy + 18);
+        }
+        noteBar.style.left = `${Math.round(left)}px`;
+        noteBar.style.top = `${Math.round(top)}px`;
       }
     }
   }
@@ -264,9 +300,23 @@
   function refreshCanvas() {
     const { Geometry, Renderer } = global.RoomLayout;
     latestAnalysis = Geometry.analyzeLayout(state.room, state.items, state.openings);
-    latestMetrics = Renderer.render(dom.svg, state.room, state.items, state.openings, state, latestAnalysis);
+    latestMetrics = Renderer.render(
+      dom.svg,
+      state.room,
+      state.items,
+      state.openings,
+      state.notes,
+      state,
+      latestAnalysis
+    );
     renderStatusBanner(latestAnalysis);
     updateFloatingBars();
+  }
+
+  function clearAllSelections() {
+    state.selectedId = null;
+    state.selectedOpeningId = null;
+    state.selectedNoteId = null;
   }
 
   function addFurniture(catalogId, pos) {
@@ -276,6 +326,12 @@
 
     if (cat.kind === 'opening') {
       return addOpening(pos || Geometry.findSmartOpeningPosition(cat.w, state.room, state.openings), cat.w);
+    }
+    if (cat.kind === 'note') {
+      const cx = pos ? Math.round(pos.x + cat.w / 2) : Math.round(state.room.w / 2);
+      const cy = pos ? Math.round(pos.y + cat.d / 2) : Math.round(state.room.d / 2);
+      openNoteModal({ mode: 'create-free', x: clamp(cx, 15, state.room.w - 15), y: clamp(cy, 15, state.room.d - 15) });
+      return null;
     }
 
     const place = pos || Geometry.findSmartPlacePosition(cat.w, cat.d, state.room, state.items);
@@ -288,12 +344,13 @@
       h: cat.h,
       x: Math.round(place.x),
       y: Math.round(place.y),
-      rotation: 0
+      rotation: 0,
+      note: ''
     };
 
     state.items.push(newItem);
+    clearAllSelections();
     state.selectedId = newItem.id;
-    state.selectedOpeningId = null;
     syncDraftAndPersist(true);
     refreshCanvas();
     return newItem;
@@ -313,7 +370,7 @@
       hinge: 'start'
     };
     state.openings.push(opening);
-    state.selectedId = null;
+    clearAllSelections();
     state.selectedOpeningId = opening.id;
     syncDraftAndPersist(true);
     refreshCanvas();
@@ -352,13 +409,20 @@
       y: pos.y
     };
     state.items.push(copy);
+    clearAllSelections();
     state.selectedId = copy.id;
-    state.selectedOpeningId = null;
     syncDraftAndPersist(true);
     refreshCanvas();
   }
 
   function deleteSelected() {
+    if (state.selectedNoteId) {
+      state.notes = state.notes.filter((n) => n.id !== state.selectedNoteId);
+      state.selectedNoteId = null;
+      syncDraftAndPersist(true);
+      refreshCanvas();
+      return;
+    }
     if (state.selectedOpeningId) {
       state.openings = state.openings.filter((o) => o.id !== state.selectedOpeningId);
       if (state.editingOpeningId === state.selectedOpeningId) closeOpeningModal();
@@ -401,6 +465,7 @@
     state.editingId = item.id;
     dom.resizeTitle.textContent = `自定义尺寸 · ${cat ? cat.name : item.name}`;
     dom.editName.value = item.name;
+    dom.editNote.value = item.note || '';
     dom.editW.value = item.w;
     dom.editD.value = item.d;
     dom.editH.value = item.h;
@@ -432,6 +497,7 @@
 
     const nameVal = dom.editName.value.trim();
     if (nameVal) item.name = nameVal;
+    item.note = dom.editNote.value.trim();
 
     const wRaw = Number(dom.editW.value);
     const dRaw = Number(dom.editD.value);
@@ -505,6 +571,83 @@
     refreshCanvas();
   }
 
+  // 文字备注弹窗（支持自由位置标注 & 家具备注）
+  function openNoteModal(ctx) {
+    state.noteModalContext = ctx;
+    if (ctx.mode === 'edit-item') {
+      const item = state.items.find((it) => it.id === ctx.itemId);
+      if (!item) return;
+      dom.noteModalTitle.textContent = `为「${item.name}」添加备注`;
+      dom.noteTextInput.value = item.note || '';
+    } else if (ctx.mode === 'edit-free') {
+      const note = state.notes.find((n) => n.id === ctx.noteId);
+      if (!note) return;
+      dom.noteModalTitle.textContent = '修改位置备注';
+      dom.noteTextInput.value = note.text || '';
+    } else {
+      dom.noteModalTitle.textContent = '添加位置文字备注';
+      dom.noteTextInput.value = '';
+    }
+    dom.noteModal.hidden = false;
+    dom.noteTextInput.focus();
+    dom.noteTextInput.select();
+  }
+
+  function closeNoteModal() {
+    dom.noteModal.hidden = true;
+    state.noteModalContext = null;
+  }
+
+  function confirmNoteModal() {
+    const ctx = state.noteModalContext;
+    if (!ctx) return;
+    const text = dom.noteTextInput.value.trim();
+
+    if (ctx.mode === 'edit-item') {
+      const item = state.items.find((it) => it.id === ctx.itemId);
+      if (item) {
+        item.note = text;
+        syncDraftAndPersist(true);
+        refreshCanvas();
+      }
+      closeNoteModal();
+      return;
+    }
+
+    if (!text) {
+      if (ctx.mode === 'edit-free') {
+        state.notes = state.notes.filter((n) => n.id !== ctx.noteId);
+        state.selectedNoteId = null;
+        syncDraftAndPersist(true);
+        refreshCanvas();
+      }
+      closeNoteModal();
+      return;
+    }
+
+    if (ctx.mode === 'edit-free') {
+      const note = state.notes.find((n) => n.id === ctx.noteId);
+      if (note) {
+        note.text = text;
+        syncDraftAndPersist(true);
+        refreshCanvas();
+      }
+    } else {
+      const created = {
+        id: nextId('note'),
+        x: Math.round(ctx.x),
+        y: Math.round(ctx.y),
+        text
+      };
+      state.notes.push(created);
+      clearAllSelections();
+      state.selectedNoteId = created.id;
+      syncDraftAndPersist(true);
+      refreshCanvas();
+    }
+    closeNoteModal();
+  }
+
   // 多布局保存/重命名弹窗
   function openLayoutModal(mode, targetLayoutId) {
     const { Layouts } = global.RoomLayout;
@@ -552,7 +695,8 @@
       name: rawName,
       room: state.room,
       items: state.items,
-      openings: state.openings
+      openings: state.openings,
+      notes: state.notes
     });
     state.isDirty = false;
     Layouts.persistStore(state.store);
@@ -565,11 +709,12 @@
     state.room = scene.room;
     state.items = scene.items;
     state.openings = scene.openings;
-    state.selectedId = null;
-    state.selectedOpeningId = null;
+    state.notes = scene.notes || [];
+    clearAllSelections();
     state.isDirty = false;
     closeResizeModal();
     closeOpeningModal();
+    closeNoteModal();
     syncRoomInputs();
     renderLayoutBar();
     refreshCanvas();
@@ -622,6 +767,8 @@
         const sizeLabel =
           dragSession.cat.kind === 'opening'
             ? `${dragSession.cat.w}cm 门洞`
+            : dragSession.cat.kind === 'note'
+            ? '拖到目标位置'
             : `${dragSession.cat.w}×${dragSession.cat.d}cm`;
         ghost.innerHTML = `<span>${dragSession.cat.name}</span><small>${sizeLabel}</small>`;
         document.body.appendChild(ghost);
@@ -663,6 +810,14 @@
           addOpening(snappedWall, session.cat.w);
           return;
         }
+        if (session.cat.kind === 'note') {
+          openNoteModal({
+            mode: 'create-free',
+            x: clamp(Math.round(cmPos.x), 15, state.room.w - 15),
+            y: clamp(Math.round(cmPos.y), 15, state.room.d - 15)
+          });
+          return;
+        }
         const rawX = cmPos.x - session.cat.w / 2;
         const rawY = cmPos.y - session.cat.d / 2;
         const tempItem = { id: '__new__', w: session.cat.w, d: session.cat.d, rotation: 0 };
@@ -675,7 +830,10 @@
   function bindCanvasPointerEvents() {
     const { Geometry } = global.RoomLayout;
     let canvasDrag = null;
+    let handleDrag = null;
     let openingDrag = null;
+    let openingResizeDrag = null;
+    let noteDrag = null;
     let rafPending = false;
     let lastMoveEvt = null;
     let lastTapKey = null;
@@ -684,7 +842,97 @@
     dom.svg.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
 
-      // 1. 优先命中墙边门口
+      // 1. 优先命中家具四周缩放控制点
+      const resizeHandle = e.target.closest('.resize-handle');
+      if (resizeHandle) {
+        const id = resizeHandle.dataset.id;
+        const dir = resizeHandle.dataset.dir;
+        const item = state.items.find((it) => it.id === id);
+        if (!item || !dir) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+        lastTapKey = null;
+        clearAllSelections();
+        state.selectedId = id;
+        state.resizingId = id;
+
+        handleDrag = {
+          id,
+          dir,
+          startItem: { ...item },
+          minDim: Math.min(item.w, item.d) < 15 || item.catalogId === 'partition-screen' ? 3 : 15,
+          moved: false
+        };
+        refreshCanvas();
+        return;
+      }
+
+      // 2. 命中墙边门口两端拉伸控制点
+      const openHandle = e.target.closest('.opening-resize-handle');
+      if (openHandle) {
+        const opId = openHandle.dataset.openingId;
+        const end = openHandle.dataset.end;
+        const op = state.openings.find((o) => o.id === opId);
+        if (!op || !end) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+        lastTapKey = null;
+        clearAllSelections();
+        state.selectedOpeningId = opId;
+        state.draggingOpeningId = opId;
+        openingResizeDrag = {
+          id: opId,
+          end,
+          startOffset: op.offset,
+          startWidth: op.width,
+          moved: false
+        };
+        refreshCanvas();
+        return;
+      }
+
+      // 3. 命中自由文字备注
+      const noteNode = e.target.closest('.note-node');
+      if (noteNode) {
+        const noteId = noteNode.dataset.noteId;
+        const note = state.notes.find((n) => n.id === noteId);
+        if (!note) return;
+
+        e.preventDefault();
+        const now = Date.now();
+        const tapKey = `note:${noteId}`;
+        if (lastTapKey === tapKey && now - lastTapTime < 350) {
+          lastTapKey = null;
+          clearAllSelections();
+          state.selectedNoteId = noteId;
+          state.draggingNoteId = null;
+          noteDrag = null;
+          refreshCanvas();
+          openNoteModal({ mode: 'edit-free', noteId });
+          return;
+        }
+        lastTapKey = tapKey;
+        lastTapTime = now;
+
+        clearAllSelections();
+        state.selectedNoteId = noteId;
+        state.draggingNoteId = noteId;
+        const cmStart = clientToRoomCm(e.clientX, e.clientY);
+        noteDrag = {
+          id: noteId,
+          startClientX: e.clientX,
+          startClientY: e.clientY,
+          offsetX: cmStart.x - note.x,
+          offsetY: cmStart.y - note.y,
+          moved: false
+        };
+        refreshCanvas();
+        return;
+      }
+
+      // 4. 命中墙边门口
       const openingNode = e.target.closest('.opening-node');
       if (openingNode) {
         const opId = openingNode.dataset.openingId;
@@ -696,7 +944,7 @@
         const tapKey = `open:${opId}`;
         if (lastTapKey === tapKey && now - lastTapTime < 350) {
           lastTapKey = null;
-          state.selectedId = null;
+          clearAllSelections();
           state.selectedOpeningId = opId;
           state.draggingOpeningId = null;
           openingDrag = null;
@@ -707,7 +955,7 @@
         lastTapKey = tapKey;
         lastTapTime = now;
 
-        state.selectedId = null;
+        clearAllSelections();
         state.selectedOpeningId = opId;
         state.draggingOpeningId = opId;
         openingDrag = {
@@ -720,7 +968,7 @@
         return;
       }
 
-      // 2. 命中家具或屏风
+      // 5. 命中家具或屏风
       const node = e.target.closest('.furniture-node');
       if (node) {
         const id = node.dataset.id;
@@ -732,8 +980,8 @@
         const tapKey = `item:${id}`;
         if (lastTapKey === tapKey && now - lastTapTime < 350) {
           lastTapKey = null;
+          clearAllSelections();
           state.selectedId = id;
-          state.selectedOpeningId = null;
           state.draggingId = null;
           canvasDrag = null;
           refreshCanvas();
@@ -743,8 +991,8 @@
         lastTapKey = tapKey;
         lastTapTime = now;
 
+        clearAllSelections();
         state.selectedId = id;
-        state.selectedOpeningId = null;
         state.draggingId = id;
         const cmStart = clientToRoomCm(e.clientX, e.clientY);
 
@@ -760,7 +1008,7 @@
         return;
       }
 
-      // 3. 命中墙体边缘（双击可快速标记门口）
+      // 6. 命中墙体边缘（双击可快速标记门口）
       const wallEdge = e.target.closest('.wall-hit-edge');
       if (wallEdge) {
         const wall = wallEdge.dataset.wall;
@@ -777,18 +1025,32 @@
         lastTapKey = tapKey;
         lastTapTime = now;
       } else {
-        lastTapKey = null;
+        // 7. 双击画布空白处直接添加文字备注
+        const cmPos = clientToRoomCm(e.clientX, e.clientY);
+        const insideRoom =
+          cmPos.x >= 5 && cmPos.x <= state.room.w - 5 && cmPos.y >= 5 && cmPos.y <= state.room.d - 5;
+        const now = Date.now();
+        if (insideRoom && lastTapKey === 'blank' && now - lastTapTime < 380) {
+          lastTapKey = null;
+          openNoteModal({
+            mode: 'create-free',
+            x: Math.round(cmPos.x),
+            y: Math.round(cmPos.y)
+          });
+          return;
+        }
+        lastTapKey = insideRoom ? 'blank' : null;
+        lastTapTime = now;
       }
 
-      if (state.selectedId || state.selectedOpeningId) {
-        state.selectedId = null;
-        state.selectedOpeningId = null;
+      if (state.selectedId || state.selectedOpeningId || state.selectedNoteId) {
+        clearAllSelections();
         refreshCanvas();
       }
     });
 
     global.addEventListener('pointermove', (e) => {
-      if (!canvasDrag && !openingDrag) return;
+      if (!canvasDrag && !handleDrag && !openingDrag && !openingResizeDrag && !noteDrag) return;
       lastMoveEvt = e;
       if (rafPending) return;
       rafPending = true;
@@ -797,6 +1059,78 @@
         rafPending = false;
         if (!lastMoveEvt) return;
         const evt = lastMoveEvt;
+
+        if (handleDrag) {
+          const item = state.items.find((it) => it.id === handleDrag.id);
+          if (!item) return;
+          const cmPos = clientToRoomCm(evt.clientX, evt.clientY);
+          const next = Geometry.resizeFromHandle(
+            handleDrag.startItem,
+            handleDrag.dir,
+            cmPos.x,
+            cmPos.y,
+            state.room,
+            state.items,
+            evt.shiftKey,
+            handleDrag.minDim
+          );
+          if (item.x !== next.x || item.y !== next.y || item.w !== next.w || item.d !== next.d) {
+            handleDrag.moved = true;
+            item.x = next.x;
+            item.y = next.y;
+            item.w = next.w;
+            item.d = next.d;
+            refreshCanvas();
+          }
+          return;
+        }
+
+        if (openingResizeDrag) {
+          const op = state.openings.find((o) => o.id === openingResizeDrag.id);
+          if (!op) return;
+          const cmPos = clientToRoomCm(evt.clientX, evt.clientY);
+          const isHoriz = op.wall === 'top' || op.wall === 'bottom';
+          const wallLen = isHoriz ? state.room.w : state.room.d;
+          const rawCoord = isHoriz ? cmPos.x : cmPos.y;
+          const coord = evt.shiftKey ? Math.round(rawCoord) : Math.round(rawCoord / 5) * 5;
+          const fixedEnd = openingResizeDrag.startOffset + openingResizeDrag.startWidth;
+          const fixedStart = openingResizeDrag.startOffset;
+
+          let nextOffset = op.offset;
+          let nextWidth = op.width;
+          if (openingResizeDrag.end === 'start') {
+            nextOffset = clamp(coord, 0, fixedEnd - 30);
+            nextWidth = clamp(fixedEnd - nextOffset, 30, Math.min(400, wallLen));
+          } else {
+            const endCoord = clamp(coord, fixedStart + 30, wallLen);
+            nextOffset = fixedStart;
+            nextWidth = clamp(endCoord - fixedStart, 30, Math.min(400, wallLen - fixedStart));
+          }
+          if (op.offset !== nextOffset || op.width !== nextWidth) {
+            openingResizeDrag.moved = true;
+            op.offset = Math.round(nextOffset);
+            op.width = Math.round(nextWidth);
+            refreshCanvas();
+          }
+          return;
+        }
+
+        if (noteDrag) {
+          const note = state.notes.find((n) => n.id === noteDrag.id);
+          if (!note) return;
+          if (Math.hypot(evt.clientX - noteDrag.startClientX, evt.clientY - noteDrag.startClientY) >= 3) {
+            noteDrag.moved = true;
+          }
+          const cmPos = clientToRoomCm(evt.clientX, evt.clientY);
+          const nx = clamp(Math.round(cmPos.x - noteDrag.offsetX), 0, state.room.w);
+          const ny = clamp(Math.round(cmPos.y - noteDrag.offsetY), 0, state.room.d);
+          if (note.x !== nx || note.y !== ny) {
+            note.x = nx;
+            note.y = ny;
+            refreshCanvas();
+          }
+          return;
+        }
 
         if (openingDrag) {
           const op = state.openings.find((o) => o.id === openingDrag.id);
@@ -837,6 +1171,27 @@
     });
 
     global.addEventListener('pointerup', () => {
+      if (handleDrag) {
+        const wasMoved = handleDrag.moved;
+        handleDrag = null;
+        state.resizingId = null;
+        if (wasMoved) syncDraftAndPersist(true);
+        refreshCanvas();
+      }
+      if (openingResizeDrag) {
+        const wasMoved = openingResizeDrag.moved;
+        openingResizeDrag = null;
+        state.draggingOpeningId = null;
+        if (wasMoved) syncDraftAndPersist(true);
+        refreshCanvas();
+      }
+      if (noteDrag) {
+        const wasMoved = noteDrag.moved;
+        noteDrag = null;
+        state.draggingNoteId = null;
+        if (wasMoved) syncDraftAndPersist(true);
+        refreshCanvas();
+      }
       if (openingDrag) {
         const wasMoved = openingDrag.moved;
         openingDrag = null;
@@ -898,7 +1253,8 @@
         const res = Layouts.saveCurrentLayout(state.store, {
           room: state.room,
           items: state.items,
-          openings: state.openings
+          openings: state.openings,
+          notes: state.notes
         });
         state.isDirty = false;
         Layouts.persistStore(state.store);
@@ -915,7 +1271,8 @@
         state.room,
         state.items,
         state.openings,
-        state.isDirty
+        state.isDirty,
+        state.notes
       );
       Layouts.persistStore(state.store);
       applyLoadedScene(res);
@@ -959,7 +1316,8 @@
         state.room,
         state.items,
         state.openings,
-        state.isDirty
+        state.isDirty,
+        state.notes
       );
       if (!switched) return;
       Layouts.persistStore(state.store);
@@ -981,6 +1339,20 @@
       dom.layoutNameInput.focus();
     });
 
+    // 文字备注弹窗
+    dom.noteModalClose.addEventListener('click', closeNoteModal);
+    dom.noteModalCancel.addEventListener('click', closeNoteModal);
+    dom.noteModalConfirm.addEventListener('click', confirmNoteModal);
+    dom.noteModal.addEventListener('click', (e) => {
+      if (e.target === dom.noteModal) closeNoteModal();
+    });
+    dom.noteQuickChips.addEventListener('click', (e) => {
+      const btn = e.target.closest('.preset-chip');
+      if (!btn) return;
+      dom.noteTextInput.value = btn.dataset.text || '';
+      dom.noteTextInput.focus();
+    });
+
     // 分类筛选
     dom.categoryTabs.addEventListener('click', (e) => {
       const btn = e.target.closest('.cat-pill');
@@ -991,13 +1363,14 @@
 
     // 清空画布
     dom.clearBtn.addEventListener('click', () => {
-      if (state.items.length === 0 && state.openings.length === 0) return;
+      if (state.items.length === 0 && state.openings.length === 0 && state.notes.length === 0) return;
       state.items = [];
       state.openings = [];
-      state.selectedId = null;
-      state.selectedOpeningId = null;
+      state.notes = [];
+      clearAllSelections();
       closeResizeModal();
       closeOpeningModal();
+      closeNoteModal();
       syncDraftAndPersist(true);
       refreshCanvas();
       showToast('已清空当前画布');
@@ -1013,6 +1386,7 @@
           state.room,
           state.items,
           state.openings,
+          state.notes,
           latestAnalysis,
           layoutName
         );
@@ -1027,6 +1401,9 @@
     dom.btnResize.addEventListener('click', () => {
       if (state.selectedId) openResizeModal(state.selectedId);
     });
+    dom.btnNote.addEventListener('click', () => {
+      if (state.selectedId) openNoteModal({ mode: 'edit-item', itemId: state.selectedId });
+    });
     dom.btnDuplicate.addEventListener('click', duplicateSelected);
     dom.btnDelete.addEventListener('click', deleteSelected);
 
@@ -1037,17 +1414,22 @@
     });
     dom.openActDelete.addEventListener('click', deleteSelected);
 
+    // 自由备注浮动工具条
+    dom.noteActEdit.addEventListener('click', () => {
+      if (state.selectedNoteId) openNoteModal({ mode: 'edit-free', noteId: state.selectedNoteId });
+    });
+    dom.noteActDelete.addEventListener('click', deleteSelected);
+
     // 预警条点击定位家具或门口
     dom.statusBar.addEventListener('click', (e) => {
       const chip = e.target.closest('.warn-chip');
       if (!chip || !chip.dataset.targetId) return;
       const targetId = chip.dataset.targetId;
+      clearAllSelections();
       if (state.openings.some((o) => o.id === targetId)) {
         state.selectedOpeningId = targetId;
-        state.selectedId = null;
       } else {
         state.selectedId = targetId;
-        state.selectedOpeningId = null;
       }
       state.flashId = targetId;
       clearTimeout(flashTimer);
@@ -1068,7 +1450,7 @@
       if (e.target === dom.resizeModal) closeResizeModal();
     });
 
-    [dom.editName, dom.editW, dom.editD, dom.editH].forEach((input) => {
+    [dom.editName, dom.editNote, dom.editW, dom.editD, dom.editH].forEach((input) => {
       input.addEventListener('input', () => applyResizeInputs(false));
       input.addEventListener('change', () => applyResizeInputs(true));
     });
@@ -1138,12 +1520,12 @@
       const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 
       if (e.key === 'Escape') {
-        if (!dom.layoutModal.hidden) closeLayoutModal();
+        if (!dom.noteModal.hidden) closeNoteModal();
+        else if (!dom.layoutModal.hidden) closeLayoutModal();
         else if (!dom.openingModal.hidden) closeOpeningModal();
         else if (!dom.resizeModal.hidden) closeResizeModal();
-        else if (state.selectedId || state.selectedOpeningId) {
-          state.selectedId = null;
-          state.selectedOpeningId = null;
+        else if (state.selectedId || state.selectedOpeningId || state.selectedNoteId) {
+          clearAllSelections();
           refreshCanvas();
         }
         return;
@@ -1151,7 +1533,8 @@
 
       if (isInput) {
         if (e.key === 'Enter') {
-          if (!dom.layoutModal.hidden) confirmLayoutModal();
+          if (!dom.noteModal.hidden) confirmNoteModal();
+          else if (!dom.layoutModal.hidden) confirmLayoutModal();
           else if (!dom.openingModal.hidden) {
             applyOpeningInputs(true);
             closeOpeningModal();
@@ -1164,7 +1547,7 @@
       }
 
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (state.selectedId || state.selectedOpeningId) {
+        if (state.selectedId || state.selectedOpeningId || state.selectedNoteId) {
           e.preventDefault();
           deleteSelected();
         }
@@ -1217,12 +1600,16 @@
       floatingBar: document.getElementById('floating-bar'),
       btnRotate: document.getElementById('act-rotate'),
       btnResize: document.getElementById('act-resize'),
+      btnNote: document.getElementById('act-note'),
       btnDuplicate: document.getElementById('act-duplicate'),
       btnDelete: document.getElementById('act-delete'),
       floatingOpeningBar: document.getElementById('floating-opening-bar'),
       openActFlip: document.getElementById('open-act-flip'),
       openActEdit: document.getElementById('open-act-edit'),
       openActDelete: document.getElementById('open-act-delete'),
+      floatingNoteBar: document.getElementById('floating-note-bar'),
+      noteActEdit: document.getElementById('note-act-edit'),
+      noteActDelete: document.getElementById('note-act-delete'),
       resizeModal: document.getElementById('resize-modal'),
       resizeTitle: document.getElementById('resize-title'),
       closeModalBtn: document.getElementById('modal-close'),
@@ -1231,6 +1618,7 @@
       presetRow: document.getElementById('preset-row'),
       presetChips: document.getElementById('preset-chips'),
       editName: document.getElementById('edit-name'),
+      editNote: document.getElementById('edit-note'),
       editW: document.getElementById('edit-w'),
       editD: document.getElementById('edit-d'),
       editH: document.getElementById('edit-h'),
@@ -1250,6 +1638,13 @@
       layoutModalConfirm: document.getElementById('layout-modal-confirm'),
       layoutQuickChips: document.getElementById('layout-quick-chips'),
       layoutNameInput: document.getElementById('layout-name-input'),
+      noteModal: document.getElementById('note-modal'),
+      noteModalTitle: document.getElementById('note-modal-title'),
+      noteModalClose: document.getElementById('note-modal-close'),
+      noteModalCancel: document.getElementById('note-modal-cancel'),
+      noteModalConfirm: document.getElementById('note-modal-confirm'),
+      noteQuickChips: document.getElementById('note-quick-chips'),
+      noteTextInput: document.getElementById('note-text-input'),
       toast: document.getElementById('toast')
     };
 

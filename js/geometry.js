@@ -79,6 +79,70 @@
     };
   }
 
+  /**
+   * 通过拖动四周控制点直接缩放家具尺寸（支持旋转状态与边缘磁吸，保持对侧锚点不动）
+   */
+  function resizeFromHandle(startItem, dir, pointerCmX, pointerCmY, room, others, disableSnap, minSizeCm) {
+    const startFp = getFootprint(startItem);
+    const rot = (((startItem.rotation || 0) % 360) + 360) % 360;
+    const swapped = rot === 90 || rot === 270;
+    const minDim = Math.max(3, minSizeCm || 5);
+    const maxDim = 600;
+
+    function snapCoord(val, axis) {
+      if (disableSnap) return Math.round(val);
+      const candidates = axis === 'x' ? [0, room.w] : [0, room.d];
+      for (let i = 0; i < others.length; i++) {
+        const o = others[i];
+        if (o.id === startItem.id) continue;
+        const ofp = getFootprint(o);
+        if (axis === 'x') candidates.push(ofp.x, ofp.right);
+        else candidates.push(ofp.y, ofp.bottom);
+      }
+      let best = val;
+      let bestDist = SNAP_THRESHOLD_CM + 0.001;
+      for (let i = 0; i < candidates.length; i++) {
+        const dist = Math.abs(val - candidates[i]);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = candidates[i];
+        }
+      }
+      return Math.round(best);
+    }
+
+    let left = startFp.x;
+    let right = startFp.right;
+    let top = startFp.y;
+    let bottom = startFp.bottom;
+
+    if (dir.includes('w')) {
+      const target = snapCoord(pointerCmX, 'x');
+      left = Math.max(right - maxDim, Math.min(right - minDim, target));
+    } else if (dir.includes('e')) {
+      const target = snapCoord(pointerCmX, 'x');
+      right = Math.min(left + maxDim, Math.max(left + minDim, target));
+    }
+
+    if (dir.includes('n')) {
+      const target = snapCoord(pointerCmY, 'y');
+      top = Math.max(bottom - maxDim, Math.min(bottom - minDim, target));
+    } else if (dir.includes('s')) {
+      const target = snapCoord(pointerCmY, 'y');
+      bottom = Math.min(top + maxDim, Math.max(top + minDim, target));
+    }
+
+    const newFpW = Math.round(right - left);
+    const newFpD = Math.round(bottom - top);
+
+    return {
+      x: Math.round(left),
+      y: Math.round(top),
+      w: swapped ? newFpD : newFpW,
+      d: swapped ? newFpW : newFpD
+    };
+  }
+
   function classifyGap(gap) {
     if (gap <= FLUSH_TOLERANCE_CM) return 'flush';
     if (gap < MIN_PASSAGE_CM) return 'narrow';
@@ -660,6 +724,7 @@
     SNAP_THRESHOLD_CM,
     getFootprint,
     snapPosition,
+    resizeFromHandle,
     measureClearances,
     getOpeningGeometry,
     snapOpeningToWall,

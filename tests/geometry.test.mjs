@@ -119,4 +119,27 @@ const room = { w: 400, d: 340, h: 280 };
   assert.ok(!resOut.warnings.some((w) => w.type === 'door_blocked'), '外开门不应报室内扇区遮挡');
 }
 
-console.log('ALL GEOMETRY TESTS PASSED (9/9 groups)');
+// 10. 拖拽四周控制点直接缩放（含旋转状态与磁吸）
+{
+  const toilet = { id: 't1', name: '马桶', x: 50, y: 50, w: 40, d: 70, h: 78, rotation: 0 };
+  const resizedE = Geometry.resizeFromHandle(toilet, 'e', 110, 80, room, [], true, 15);
+  assert.equal(resizedE.x, 50);
+  assert.equal(resizedE.y, 50);
+  assert.equal(resizedE.w, 60);
+  assert.equal(resizedE.d, 70);
+
+  // 向左缩小并吸附左墙 0
+  const resizedW = Geometry.resizeFromHandle(toilet, 'w', 4, 80, room, [], false, 15);
+  assert.equal(resizedW.x, 0);
+  assert.equal(resizedW.w, 90);
+
+  // 旋转 90 度后，拖拽下边缘 's' 应改变原始 w（纵向占据）
+  const screen90 = { id: 's90', name: '屏风隔断', x: 100, y: 20, w: 90, d: 6, h: 200, rotation: 90 };
+  const resizedS = Geometry.resizeFromHandle(screen90, 's', 103, 150, room, [], true, 3);
+  assert.equal(resizedS.x, 100);
+  assert.equal(resizedS.y, 20);
+  assert.equal(resizedS.w, 130, '旋转90度时纵向拉长应同步更新原始长度 w');
+  assert.equal(resizedS.d, 6);
+}
+
+console.log('ALL GEOMETRY TESTS PASSED (10/10 groups)');

@@ -592,6 +592,19 @@
     ].join('');
   }
 
+  // 文字备注图标
+  function drawNoteIconSvg(w, d, fill, stroke) {
+    const bw = Math.max(12, w - 4);
+    const bh = Math.max(10, d - 6);
+    const x = (w - bw) / 2;
+    const y = (d - bh) / 2;
+    return [
+      `<rect x="${x}" y="${y}" width="${bw}" height="${bh}" rx="4" fill="${fill}" stroke="${stroke}" stroke-width="1.4"/>`,
+      `<line x1="${x + 4}" y1="${y + bh * 0.36}" x2="${x + bw - 4}" y2="${y + bh * 0.36}" stroke="${stroke}" stroke-width="1.3" stroke-linecap="round"/>`,
+      `<line x1="${x + 4}" y1="${y + bh * 0.66}" x2="${x + bw * 0.72}" y2="${y + bh * 0.66}" stroke="${stroke}" stroke-width="1.3" stroke-linecap="round" opacity="0.7"/>`
+    ].join('');
+  }
+
   // 通用简约家具（茶几、电视柜、餐桌、冰箱、书柜、床头柜）
   function drawSimpleSvg(w, d, fill, stroke, variant) {
     if (variant === 'fridge') {
@@ -912,6 +925,16 @@
         { label: '100cm (大门口)', w: 100 }
       ],
       drawSvg: drawWallDoorIconSvg
+    },
+    {
+      id: 'text-note',
+      name: '文字备注',
+      kind: 'note',
+      category: 'bath',
+      categories: ['bedroom', 'study', 'living', 'bath'],
+      w: 70, d: 44, h: 10,
+      fill: '#fffbeb', stroke: '#d97706',
+      drawSvg: drawNoteIconSvg
     },
     {
       id: 'partition-screen',

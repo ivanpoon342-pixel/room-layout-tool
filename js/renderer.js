@@ -264,6 +264,18 @@
       ? `<circle cx="${midX}" cy="${midY}" r="${Math.max(18, v.r * 0.45)}" fill="none" stroke="#dc2626" stroke-width="2.4" class="flash-ring" pointer-events="none"/>`
       : '';
 
+    const resizeCursor = isHoriz ? 'ew-resize' : 'ns-resize';
+    const openingHandles = isSelected
+      ? `<g class="opening-resize-handle" data-opening-id="${escapeHtml(op.id)}" data-end="start" style="cursor:${resizeCursor}">` +
+        `<circle cx="${v.px1}" cy="${v.py1}" r="10" fill="transparent"/>` +
+        `<circle cx="${v.px1}" cy="${v.py1}" r="4.5" fill="#ffffff" stroke="#0f766e" stroke-width="2"/>` +
+        `</g>` +
+        `<g class="opening-resize-handle" data-opening-id="${escapeHtml(op.id)}" data-end="end" style="cursor:${resizeCursor}">` +
+        `<circle cx="${v.px2}" cy="${v.py2}" r="10" fill="transparent"/>` +
+        `<circle cx="${v.px2}" cy="${v.py2}" r="4.5" fill="#ffffff" stroke="#0f766e" stroke-width="2"/>` +
+        `</g>`
+      : '';
+
     return [
       `<g class="opening-node${isSelected ? ' is-selected' : ''}" data-opening-id="${escapeHtml(op.id)}">`,
       `<line x1="${v.px1}" y1="${v.py1}" x2="${v.px2}" y2="${v.py2}" stroke="#ffffff" stroke-width="6.5"/>`,
@@ -274,6 +286,7 @@
       `<rect x="${labelX - pillW / 2}" y="${labelY - pillH / 2}" width="${pillW}" height="${pillH}" rx="9" fill="${isBlocked ? '#dc2626' : isSelected ? '#0f766e' : '#ffffff'}" stroke="${stroke}" stroke-width="1.2"/>`,
       `<text x="${labelX}" y="${labelY + 3.6}" text-anchor="middle" font-size="10" font-weight="600" fill="${isBlocked || isSelected ? '#ffffff' : '#0369a1'}">${escapeHtml(labelText)}</text>`,
       `</g>`,
+      openingHandles,
       flashSvg,
       `</g>`
     ].join('');
@@ -327,13 +340,67 @@
       dangerOverlay = `<rect x="-1" y="-1" width="${pxW + 2}" height="${pxD + 2}" rx="3" fill="none" stroke="#ea580c" stroke-width="1.6" stroke-dasharray="4 2" pointer-events="none"/>`;
     }
 
-    const selectOutline = isSelected
-      ? `<rect x="-3" y="-3" width="${pxW + 6}" height="${pxD + 6}" rx="4" fill="none" stroke="#0f766e" stroke-width="2" pointer-events="none"/>` +
-        `<circle cx="-3" cy="-3" r="3.2" fill="#ffffff" stroke="#0f766e" stroke-width="1.6" pointer-events="none"/>` +
-        `<circle cx="${pxW + 3}" cy="-3" r="3.2" fill="#ffffff" stroke="#0f766e" stroke-width="1.6" pointer-events="none"/>` +
-        `<circle cx="-3" cy="${pxD + 3}" r="3.2" fill="#ffffff" stroke="#0f766e" stroke-width="1.6" pointer-events="none"/>` +
-        `<circle cx="${pxW + 3}" cy="${pxD + 3}" r="3.2" fill="#ffffff" stroke="#0f766e" stroke-width="1.6" pointer-events="none"/>`
+    let selectOutline = '';
+    if (isSelected) {
+      const idAttr = escapeHtml(item.id);
+      const showCorners = pxW >= 24 && pxD >= 24;
+      const cornerHandles = showCorners
+        ? [
+            { dir: 'nw', cx: -3, cy: -3, cursor: 'nwse-resize' },
+            { dir: 'ne', cx: pxW + 3, cy: -3, cursor: 'nesw-resize' },
+            { dir: 'sw', cx: -3, cy: pxD + 3, cursor: 'nesw-resize' },
+            { dir: 'se', cx: pxW + 3, cy: pxD + 3, cursor: 'nwse-resize' }
+          ]
+            .map(
+              (h) =>
+                `<g class="resize-handle" data-id="${idAttr}" data-dir="${h.dir}" style="cursor:${h.cursor}">` +
+                `<circle cx="${h.cx}" cy="${h.cy}" r="10" fill="transparent"/>` +
+                `<circle cx="${h.cx}" cy="${h.cy}" r="4.4" fill="#ffffff" stroke="#0f766e" stroke-width="1.9"/>` +
+                `</g>`
+            )
+            .join('')
+        : '';
+
+      const edgeHandles = [
+        { dir: 'n', x: pxW / 2, y: -4, w: 16, h: 6, hw: 24, hh: 16, cursor: 'ns-resize' },
+        { dir: 's', x: pxW / 2, y: pxD + 4, w: 16, h: 6, hw: 24, hh: 16, cursor: 'ns-resize' },
+        { dir: 'w', x: -4, y: pxD / 2, w: 6, h: 16, hw: 16, hh: 24, cursor: 'ew-resize' },
+        { dir: 'e', x: pxW + 4, y: pxD / 2, w: 6, h: 16, hw: 16, hh: 24, cursor: 'ew-resize' }
+      ]
+        .map(
+          (h) =>
+            `<g class="resize-handle" data-id="${idAttr}" data-dir="${h.dir}" style="cursor:${h.cursor}">` +
+            `<rect x="${h.x - h.hw / 2}" y="${h.y - h.hh / 2}" width="${h.hw}" height="${h.hh}" fill="transparent"/>` +
+            `<rect x="${h.x - h.w / 2}" y="${h.y - h.h / 2}" width="${h.w}" height="${h.h}" rx="3" fill="#ffffff" stroke="#0f766e" stroke-width="1.8"/>` +
+            `</g>`
+        )
+        .join('');
+
+      selectOutline =
+        `<rect x="-3" y="-3" width="${pxW + 6}" height="${pxD + 6}" rx="4" fill="none" stroke="#0f766e" stroke-width="1.8" pointer-events="none"/>` +
+        edgeHandles +
+        cornerHandles;
+    }
+
+    const isResizing = state.resizingId === item.id;
+    const liveSizeBadge = isResizing
+      ? `<g pointer-events="none">` +
+        `<rect x="${pxW / 2 - 44}" y="${pxD + 14}" width="88" height="20" rx="10" fill="#0f172a"/>` +
+        `<text x="${pxW / 2}" y="${pxD + 27.5}" text-anchor="middle" font-size="10.5" font-weight="700" fill="#ffffff">${item.w} × ${item.d} cm</text>` +
+        `</g>`
       : '';
+
+    const noteText = typeof item.note === 'string' ? item.note.trim() : '';
+    let itemNoteBadge = '';
+    if (noteText && !isResizing) {
+      const nw = Math.max(44, noteText.length * 10 + 16);
+      const ny = pxD + (isSelected ? 12 : 6);
+      itemNoteBadge =
+        `<g pointer-events="none">` +
+        `<rect x="${pxW / 2 - nw / 2}" y="${ny}" width="${nw}" height="18" rx="9" fill="#fffbeb" stroke="#d97706" stroke-width="1.1"/>` +
+        `<text x="${pxW / 2}" y="${ny + 12.2}" text-anchor="middle" font-size="9.5" font-weight="600" fill="#92400e">${escapeHtml(noteText)}</text>` +
+        `</g>`;
+    }
 
     const flashRing = isFlashing
       ? `<rect x="-6" y="-6" width="${pxW + 12}" height="${pxD + 12}" rx="6" fill="none" stroke="#dc2626" stroke-width="2.5" opacity="0.85" class="flash-ring" pointer-events="none"/>`
@@ -384,10 +451,35 @@
       `</g>`,
       dangerOverlay,
       labelSvg,
+      itemNoteBadge,
       selectOutline,
+      liveSizeBadge,
       flashRing,
       `</g>`
     ].join('');
+  }
+
+  function renderNotesLayer(notes, metrics, state) {
+    const list = Array.isArray(notes) ? notes : [];
+    const { originX, originY, scale } = metrics;
+    return list
+      .map((n) => {
+        const px = originX + n.x * scale;
+        const py = originY + n.y * scale;
+        const isSelected = state.selectedNoteId === n.id;
+        const text = n.text || '';
+        const boxW = Math.max(46, text.length * 11 + 24);
+        const boxH = 24;
+        const stroke = isSelected ? '#0f766e' : '#d97706';
+        return [
+          `<g class="note-node${isSelected ? ' is-selected' : ''}" data-note-id="${escapeHtml(n.id)}" transform="translate(${px}, ${py})">`,
+          `<rect x="${-boxW / 2}" y="${-boxH / 2}" width="${boxW}" height="${boxH}" rx="12" fill="#fffbeb" stroke="${stroke}" stroke-width="${isSelected ? 2 : 1.3}"/>`,
+          `<circle cx="${-boxW / 2 + 10}" cy="0" r="3" fill="${stroke}" pointer-events="none"/>`,
+          `<text x="${5}" y="3.8" text-anchor="middle" font-size="11" font-weight="600" fill="#78350f" pointer-events="none">${escapeHtml(text)}</text>`,
+          `</g>`
+        ].join('');
+      })
+      .join('');
   }
 
   function renderClearancesLayer(room, items, metrics, state, analysis) {
@@ -448,7 +540,7 @@
   /**
    * 渲染主入口，返回最新的 metrics
    */
-  function render(svgEl, room, items, openings, state, analysis) {
+  function render(svgEl, room, items, openings, notes, state, analysis) {
     const rect = svgEl.getBoundingClientRect();
     const width = Math.max(260, rect.width || svgEl.clientWidth || 720);
     const height = Math.max(240, rect.height || svgEl.clientHeight || 520);
@@ -465,6 +557,7 @@
       `</defs>`;
 
     const openingList = Array.isArray(openings) ? openings : [];
+    const noteList = Array.isArray(notes) ? notes : [];
     const shellSvg = renderRoomShell(room, metrics);
     const openingsSvg = openingList
       .map((op) => renderOpeningItem(op, room, metrics, state, analysis))
@@ -473,15 +566,16 @@
       .map((item) => renderFurnitureItem(item, metrics, state, analysis))
       .join('');
     const clearancesSvg = renderClearancesLayer(room, items, metrics, state, analysis);
+    const notesSvg = renderNotesLayer(noteList, metrics, state);
 
     let emptyHint = '';
-    if (items.length === 0 && openingList.length === 0) {
+    if (items.length === 0 && openingList.length === 0 && noteList.length === 0) {
       const cx = metrics.originX + metrics.roomPxW / 2;
       const cy = metrics.originY + metrics.roomPxD / 2;
       emptyHint =
         `<g pointer-events="none" opacity="0.72">` +
         `<text x="${cx}" y="${cy - 6}" text-anchor="middle" font-size="14" font-weight="600" fill="#64748b">从左侧拖入或点击家具开始试排</text>` +
-        `<text x="${cx}" y="${cy + 16}" text-anchor="middle" font-size="11.5" fill="#94a3b8">放置时自动测距 · 双击墙边可标门口 · 过窄或超占自动标红</text>` +
+        `<text x="${cx}" y="${cy + 16}" text-anchor="middle" font-size="11.5" fill="#94a3b8">拖动控制点直接改大小 · 双击墙边标门口 · 双击空白加备注</text>` +
         `</g>`;
     }
 
@@ -491,7 +585,8 @@
       emptyHint,
       `<g class="layer-openings">${openingsSvg}</g>`,
       `<g class="layer-furniture">${furnitureSvg}</g>`,
-      `<g class="layer-clearances">${clearancesSvg}</g>`
+      `<g class="layer-clearances">${clearancesSvg}</g>`,
+      `<g class="layer-notes">${notesSvg}</g>`
     ].join('');
 
     return metrics;

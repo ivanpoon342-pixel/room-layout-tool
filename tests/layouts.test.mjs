@@ -130,4 +130,27 @@ const Layouts = require('../js/layouts.js');
   assert.equal(store.layouts.length, 0);
 }
 
-console.log('ALL LAYOUT STORE TESTS PASSED (4/4 groups)');
+// 5. 文字备注与家具备注跨布局保存与切换隔离
+{
+  const store = Layouts.createEmptyStore();
+  const roomA = { w: 300, d: 240, h: 280 };
+  const itemsA = [
+    { id: 's1', catalogId: 'shower', name: '淋浴房', w: 90, d: 90, h: 210, x: 0, y: 0, rotation: 0, note: '外贴防爆膜' }
+  ];
+  const notesA = [
+    { id: 'n1', x: 110, y: 60, text: '预留地漏位置' }
+  ];
+  const resA = Layouts.saveCurrentLayout(store, { name: '厕所', room: roomA, items: itemsA, openings: [], notes: notesA });
+  assert.equal(resA.layout.notes.length, 1);
+  assert.equal(resA.layout.items[0].note, '外贴防爆膜');
+
+  const newRes = Layouts.createNewLayout(store, roomA, itemsA, [], false, notesA);
+  assert.equal(newRes.notes.length, 0);
+
+  const back = Layouts.switchLayout(store, resA.layout.id, newRes.room, [], [], false, []);
+  assert.equal(back.notes.length, 1);
+  assert.equal(back.notes[0].text, '预留地漏位置');
+  assert.equal(back.items[0].note, '外贴防爆膜');
+}
+
+console.log('ALL LAYOUT STORE TESTS PASSED (5/5 groups)');
