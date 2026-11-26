@@ -592,6 +592,21 @@
     ].join('');
   }
 
+  // 墙边窗户标记（图标栏缩略示意：墙线断口 + 浅蓝玻璃双实线窗框）
+  function drawWallWindowIconSvg(w, d, fill, stroke) {
+    const midY = d / 2;
+    const winW = w * 0.68;
+    const sx = (w - winW) / 2;
+    const ex = sx + winW;
+    const halfT = Math.max(2.6, Math.min(4.2, d * 0.24));
+    return [
+      `<line x1="1" y1="${midY}" x2="${sx}" y2="${midY}" stroke="#1e293b" stroke-width="2.5" stroke-linecap="round"/>`,
+      `<line x1="${ex}" y1="${midY}" x2="${w - 1}" y2="${midY}" stroke="#1e293b" stroke-width="2.5" stroke-linecap="round"/>`,
+      `<rect x="${sx}" y="${midY - halfT}" width="${winW}" height="${halfT * 2}" fill="${fill}" stroke="${stroke}" stroke-width="1.3"/>`,
+      `<line x1="${sx}" y1="${midY}" x2="${ex}" y2="${midY}" stroke="${stroke}" stroke-width="1"/>`
+    ].join('');
+  }
+
   // 文字备注图标
   function drawNoteIconSvg(w, d, fill, stroke) {
     const bw = Math.max(12, w - 4);
@@ -925,6 +940,22 @@
         { label: '100cm (大门口)', w: 100 }
       ],
       drawSvg: drawWallDoorIconSvg
+    },
+    {
+      id: 'wall-window',
+      name: '窗户标记',
+      kind: 'window',
+      category: 'bedroom',
+      categories: ['bedroom', 'study', 'living', 'bath'],
+      w: 150, d: 24, h: 140,
+      fill: '#e0f2fe', stroke: '#0284c7',
+      presets: [
+        { label: '60cm (卫浴窗)', w: 60 },
+        { label: '120cm (小窗)', w: 120 },
+        { label: '150cm (标准窗)', w: 150 },
+        { label: '200cm (落地大窗)', w: 200 }
+      ],
+      drawSvg: drawWallWindowIconSvg
     },
     {
       id: 'text-note',

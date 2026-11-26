@@ -232,7 +232,14 @@
         `<line x1="${v.px2 - 5}" y1="${v.py2}" x2="${v.px2 + 5}" y2="${v.py2}" stroke="#1e293b" stroke-width="2.2"/>`;
 
     let swingSvg = '';
-    if (geom.swing !== 'none') {
+    if (geom.type === 'window') {
+      const thick = 6.4;
+      swingSvg = isHoriz
+        ? `<rect x="${v.px1}" y="${v.py1 - thick / 2}" width="${Math.max(2, v.px2 - v.px1)}" height="${thick}" fill="#e0f2fe" stroke="${stroke}" stroke-width="1.3" pointer-events="none"/>` +
+          `<line x1="${v.px1}" y1="${v.py1}" x2="${v.px2}" y2="${v.py2}" stroke="${stroke}" stroke-width="1" pointer-events="none"/>`
+        : `<rect x="${v.px1 - thick / 2}" y="${v.py1}" width="${thick}" height="${Math.max(2, v.py2 - v.py1)}" fill="#e0f2fe" stroke="${stroke}" stroke-width="1.3" pointer-events="none"/>` +
+          `<line x1="${v.px1}" y1="${v.py1}" x2="${v.px2}" y2="${v.py2}" stroke="${stroke}" stroke-width="1" pointer-events="none"/>`;
+    } else if (geom.swing !== 'none') {
       const sectorPath = `M ${v.hx} ${v.hy} L ${v.jx} ${v.jy} A ${v.r} ${v.r} 0 0 ${v.sweepFlag} ${v.tx} ${v.ty} Z`;
       const arcPath = `M ${v.jx} ${v.jy} A ${v.r} ${v.r} 0 0 ${v.sweepFlag} ${v.tx} ${v.ty}`;
       swingSvg =
@@ -244,8 +251,9 @@
       swingSvg = `<line x1="${v.px1}" y1="${v.py1}" x2="${v.px2}" y2="${v.py2}" stroke="${stroke}" stroke-width="2" stroke-dasharray="5 3"/>`;
     }
 
-    // 门口尺寸胶囊标签
-    const labelText = `${op.name || '门口'} ${geom.width}cm`;
+    // 门口/窗户尺寸胶囊标签
+    const defaultLabel = geom.type === 'window' ? '窗户' : '门口';
+    const labelText = `${op.name || defaultLabel} ${geom.width}cm`;
     const pillW = Math.max(54, labelText.length * 7.2 + 12);
     const pillH = 18;
     const midX = (v.px1 + v.px2) / 2;

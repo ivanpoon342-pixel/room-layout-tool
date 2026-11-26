@@ -305,6 +305,60 @@
         if (geom.offset > cursor) {
           drawSubdividedWallQuad(wall, cursor, geom.offset, 0, room.h, wall.fill, '#94a3b8');
         }
+
+        if (geom.type === 'window') {
+          if (geom.sillH > 0) {
+            drawSubdividedWallQuad(wall, geom.offset, geom.offset + geom.width, 0, geom.sillH, wall.fill, '#94a3b8');
+          }
+          if (room.h > geom.topH) {
+            drawSubdividedWallQuad(wall, geom.offset, geom.offset + geom.width, geom.topH, room.h, wall.fill, '#94a3b8');
+          }
+          // 真实窗洞内的半透明玻璃面与竖向中梃线
+          drawClippedQuad(
+            ctx,
+            [
+              wall.toWorld(geom.offset, geom.sillH),
+              wall.toWorld(geom.offset + geom.width, geom.sillH),
+              wall.toWorld(geom.offset + geom.width, geom.topH),
+              wall.toWorld(geom.offset, geom.topH)
+            ],
+            cam,
+            halfW,
+            halfH,
+            focalPx,
+            'rgba(186, 230, 253, 0.24)',
+            '#0284c7',
+            1.8,
+            1
+          );
+          const midT = geom.offset + geom.width / 2;
+          const mA = worldToCamera(...wall.toWorld(midT, geom.sillH), cam);
+          const mB = worldToCamera(...wall.toWorld(midT, geom.topH), cam);
+          if (mA.cz >= NEAR_CLIP_CM || mB.cz >= NEAR_CLIP_CM) {
+            let pa = mA;
+            let pb = mB;
+            if (pa.cz < NEAR_CLIP_CM) {
+              const t = (NEAR_CLIP_CM - pa.cz) / (pb.cz - pa.cz);
+              pa = { cx: pa.cx + (pb.cx - pa.cx) * t, cy: pa.cy + (pb.cy - pa.cy) * t, cz: NEAR_CLIP_CM };
+            } else if (pb.cz < NEAR_CLIP_CM) {
+              const t = (NEAR_CLIP_CM - pb.cz) / (pa.cz - pb.cz);
+              pb = { cx: pb.cx + (pa.cx - pb.cx) * t, cy: pb.cy + (pa.cy - pb.cy) * t, cz: NEAR_CLIP_CM };
+            }
+            const s1 = projectCamPoint(pa, halfW, halfH, focalPx);
+            const s2 = projectCamPoint(pb, halfW, halfH, focalPx);
+            ctx.save();
+            ctx.strokeStyle = '#0284c7';
+            ctx.lineWidth = 1.6;
+            ctx.beginPath();
+            ctx.moveTo(s1.sx, s1.sy);
+            ctx.lineTo(s2.sx, s2.sy);
+            ctx.stroke();
+            ctx.restore();
+          }
+          cursor = Math.max(cursor, geom.offset + geom.width);
+          continue;
+        }
+
         if (room.h > doorH) {
           drawSubdividedWallQuad(wall, geom.offset, geom.offset + geom.width, doorH, room.h, wall.fill, '#94a3b8');
         }
@@ -492,8 +546,8 @@
       const opList = Array.isArray(openings) ? openings : [];
       for (let i = 0; i < opList.length; i++) {
         const geom = Geometry.getOpeningGeometry(opList[i], room);
-        ctx.strokeStyle = '#0284c7';
-        ctx.lineWidth = 2.4;
+        ctx.strokeStyle = geom.type === 'window' ? '#38bdf8' : '#0284c7';
+        ctx.lineWidth = geom.type === 'window' ? 3 : 2.4;
         ctx.beginPath();
         ctx.moveTo(mm.originX + geom.x1 * mm.scale, mm.originY + geom.y1 * mm.scale);
         ctx.lineTo(mm.originX + geom.x2 * mm.scale, mm.originY + geom.y2 * mm.scale);

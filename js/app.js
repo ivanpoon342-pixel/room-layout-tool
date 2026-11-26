@@ -168,6 +168,8 @@
         const sizeText =
           item.kind === 'opening'
             ? `${item.w}cm 门洞`
+            : item.kind === 'window'
+            ? `${item.w}cm 窗户`
             : item.kind === 'note'
             ? '双击空白也可加'
             : `${item.w}×${item.d}cm`;
@@ -263,6 +265,9 @@
         const cy = originY + geom.cy * scale;
 
         openBar.hidden = false;
+        const isWindow = op.type === 'window';
+        dom.openActFlip.hidden = isWindow;
+        dom.openActEdit.textContent = isWindow ? '改尺寸/高度' : '改尺寸/朝向';
         const bw = openBar.offsetWidth || 210;
         const bh = openBar.offsetHeight || 36;
         const left = clamp(cx - bw / 2, 10, Math.max(10, svgWidth - bw - 10));
@@ -393,7 +398,10 @@
     if (!cat) return null;
 
     if (cat.kind === 'opening') {
-      return addOpening(pos || Geometry.findSmartOpeningPosition(cat.w, state.room, state.openings), cat.w);
+      return addOpening(pos || Geometry.findSmartOpeningPosition(cat.w, state.room, state.openings), cat.w, 'door');
+    }
+    if (cat.kind === 'window') {
+      return addOpening(pos || Geometry.findSmartOpeningPosition(cat.w, state.room, state.openings), cat.w, 'window');
     }
     if (cat.kind === 'note') {
       const cx = pos ? Math.round(pos.x + cat.w / 2) : Math.round(state.room.w / 2);
@@ -424,18 +432,22 @@
     return newItem;
   }
 
-  function addOpening(pos, widthCm) {
+  function addOpening(pos, widthCm, openingType) {
     const { Geometry } = global.RoomLayout;
-    const width = widthCm || 80;
+    const type = openingType === 'window' ? 'window' : 'door';
+    const width = widthCm || (type === 'window' ? 150 : 80);
     const target = pos || Geometry.findSmartOpeningPosition(width, state.room, state.openings);
     const opening = {
       id: nextId('open'),
-      name: '门口',
+      type,
+      name: type === 'window' ? '窗户' : '门口',
       wall: target.wall,
       offset: Math.round(target.offset),
       width: Math.round(width),
-      swing: 'in',
-      hinge: 'start'
+      swing: type === 'window' ? 'none' : 'in',
+      hinge: 'start',
+      sillH: type === 'window' ? 90 : 0,
+      openH: type === 'window' ? 140 : 210
     };
     state.openings.push(opening);
     clearAllSelections();
@@ -591,16 +603,39 @@
     refreshCanvas();
   }
 
-  // 墙边门口定制弹窗
+  // 墙边门口/窗户定制弹窗
   function openOpeningModal(openingId) {
     const op = state.openings.find((o) => o.id === openingId);
     if (!op) return;
+    const isWindow = op.type === 'window';
+    const cat = global.RoomLayout.Catalog.getById(isWindow ? 'wall-window' : 'wall-door');
+
     state.editingOpeningId = op.id;
-    dom.openEditName.value = op.name || '门口';
+    dom.openingModalTitle.textContent = isWindow ? '定制窗户标记' : '定制门口标记';
+    dom.openingPresetLabel.textContent = isWindow ? '常用窗宽（点击即改）' : '常用门洞宽度（点击即改）';
+    dom.openingNameLabel.textContent = isWindow ? '窗户名称' : '门口名称';
+    dom.openingWidthLabel.textContent = isWindow ? '窗户宽度 (cm)' : '门洞宽度 (cm)';
+    dom.openEditName.placeholder = isWindow ? '如：卫浴小窗 / 落地窗' : '如：卫生间门';
+
+    if (cat && Array.isArray(cat.presets)) {
+      dom.openingPresetChips.innerHTML = cat.presets
+        .map((p) => `<button type="button" class="preset-chip" data-width="${p.w}">${p.label}</button>`)
+        .join('');
+    }
+
+    dom.doorSwingField.hidden = isWindow;
+    dom.doorHingeField.hidden = isWindow;
+    dom.winSillField.hidden = !isWindow;
+    dom.winHeightField.hidden = !isWindow;
+
+    dom.openEditName.value = op.name || (isWindow ? '窗户' : '门口');
     dom.openEditWidth.value = op.width;
     dom.openEditWall.value = op.wall;
-    dom.openEditSwing.value = op.swing;
-    dom.openEditHinge.value = op.hinge;
+    dom.openEditSwing.value = op.swing || 'in';
+    dom.openEditHinge.value = op.hinge || 'start';
+    dom.openEditSill.value = Number.isFinite(op.sillH) ? op.sillH : 90;
+    dom.openEditHeight.value = Number.isFinite(op.openH) ? op.openH : 140;
+
     dom.openingModal.hidden = false;
     dom.openEditWidth.focus();
     dom.openEditWidth.select();
@@ -616,6 +651,7 @@
     const op = state.openings.find((o) => o.id === state.editingOpeningId);
     if (!op) return;
 
+    const isWindow = op.type === 'window';
     const cleanName = dom.openEditName.value.trim();
     if (cleanName) op.name = cleanName;
 
@@ -625,8 +661,24 @@
     }
 
     op.wall = dom.openEditWall.value;
-    op.swing = dom.openEditSwing.value;
-    op.hinge = dom.openEditHinge.value;
+    if (isWindow) {
+      op.swing = 'none';
+      const sillRaw = Number(dom.openEditSill.value);
+      const heightRaw = Number(dom.openEditHeight.value);
+      if (Number.isFinite(sillRaw) && sillRaw >= 0) {
+        op.sillH = shouldClamp ? clamp(Math.round(sillRaw), 0, Math.max(0, state.room.h - 30)) : Math.round(sillRaw);
+      }
+      if (Number.isFinite(heightRaw) && heightRaw >= 20) {
+        op.openH = shouldClamp ? clamp(Math.round(heightRaw), 30, 400) : Math.round(heightRaw);
+      }
+      if (shouldClamp) {
+        dom.openEditSill.value = op.sillH;
+        dom.openEditHeight.value = op.openH;
+      }
+    } else {
+      op.swing = dom.openEditSwing.value;
+      op.hinge = dom.openEditHinge.value;
+    }
 
     const wallLen = op.wall === 'top' || op.wall === 'bottom' ? state.room.w : state.room.d;
     op.offset = clamp(op.offset, 0, Math.max(0, wallLen - Math.min(op.width, wallLen)));
@@ -836,6 +888,8 @@
         const sizeLabel =
           dragSession.cat.kind === 'opening'
             ? `${dragSession.cat.w}cm 门洞`
+            : dragSession.cat.kind === 'window'
+            ? `${dragSession.cat.w}cm 窗户`
             : dragSession.cat.kind === 'note'
             ? '拖到目标位置'
             : `${dragSession.cat.w}×${dragSession.cat.d}cm`;
@@ -874,9 +928,9 @@
         e.clientY <= stageRect.bottom
       ) {
         const cmPos = clientToRoomCm(e.clientX, e.clientY);
-        if (session.cat.kind === 'opening') {
+        if (session.cat.kind === 'opening' || session.cat.kind === 'window') {
           const snappedWall = Geometry.snapOpeningToWall(cmPos.x, cmPos.y, session.cat.w, state.room, e.shiftKey);
-          addOpening(snappedWall, session.cat.w);
+          addOpening(snappedWall, session.cat.w, session.cat.kind === 'window' ? 'window' : 'door');
           return;
         }
         if (session.cat.kind === 'note') {
@@ -1794,7 +1848,7 @@
       dom.openEditWidth.value = btn.dataset.width || 80;
       applyOpeningInputs(true);
     });
-    [dom.openEditName, dom.openEditWidth].forEach((input) => {
+    [dom.openEditName, dom.openEditWidth, dom.openEditSill, dom.openEditHeight].forEach((input) => {
       input.addEventListener('input', () => applyOpeningInputs(false));
       input.addEventListener('change', () => applyOpeningInputs(true));
     });
@@ -1958,6 +2012,14 @@
       editD: document.getElementById('edit-d'),
       editH: document.getElementById('edit-h'),
       openingModal: document.getElementById('opening-modal'),
+      openingModalTitle: document.getElementById('opening-modal-title'),
+      openingPresetLabel: document.getElementById('opening-preset-label'),
+      openingNameLabel: document.getElementById('opening-name-label'),
+      openingWidthLabel: document.getElementById('opening-width-label'),
+      doorSwingField: document.getElementById('door-swing-field'),
+      doorHingeField: document.getElementById('door-hinge-field'),
+      winSillField: document.getElementById('win-sill-field'),
+      winHeightField: document.getElementById('win-height-field'),
       openingModalClose: document.getElementById('opening-modal-close'),
       openingModalDone: document.getElementById('opening-modal-done'),
       openingPresetChips: document.getElementById('opening-preset-chips'),
@@ -1966,6 +2028,8 @@
       openEditWall: document.getElementById('open-edit-wall'),
       openEditSwing: document.getElementById('open-edit-swing'),
       openEditHinge: document.getElementById('open-edit-hinge'),
+      openEditSill: document.getElementById('open-edit-sill'),
+      openEditHeight: document.getElementById('open-edit-height'),
       layoutModal: document.getElementById('layout-modal'),
       layoutModalTitle: document.getElementById('layout-modal-title'),
       layoutModalClose: document.getElementById('layout-modal-close'),

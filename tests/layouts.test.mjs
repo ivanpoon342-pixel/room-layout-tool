@@ -153,4 +153,18 @@ const Layouts = require('../js/layouts.js');
   assert.equal(back.items[0].note, '外贴防爆膜');
 }
 
-console.log('ALL LAYOUT STORE TESTS PASSED (5/5 groups)');
+// 6. 窗户标记持久化与向后兼容默认门类型
+{
+  const openings = Layouts.cloneOpenings([
+    { id: 'd1', wall: 'bottom', offset: 20, width: 80 },
+    { id: 'w1', type: 'window', name: '卫浴小窗', wall: 'top', offset: 60, width: 60, sillH: 140, openH: 80 }
+  ]);
+  assert.equal(openings[0].type, 'door');
+  assert.equal(openings[0].name, '门口');
+  assert.equal(openings[1].type, 'window');
+  assert.equal(openings[1].swing, 'none');
+  assert.equal(openings[1].sillH, 140);
+  assert.equal(openings[1].openH, 80);
+}
+
+console.log('ALL LAYOUT STORE TESTS PASSED (6/6 groups)');

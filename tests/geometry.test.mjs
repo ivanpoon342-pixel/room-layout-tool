@@ -142,4 +142,25 @@ const room = { w: 400, d: 340, h: 280 };
   assert.equal(resizedS.d, 6);
 }
 
-console.log('ALL GEOMETRY TESTS PASSED (10/10 groups)');
+// 11. 窗户几何限位与不误报撞门
+{
+  const win = { id: 'win1', type: 'window', name: '窗户', wall: 'top', offset: 100, width: 150, sillH: 90, openH: 140 };
+  const geom = Geometry.getOpeningGeometry(win, room);
+  assert.equal(geom.type, 'window');
+  assert.equal(geom.swing, 'none');
+  assert.equal(geom.swingBox, null);
+  assert.equal(geom.sillH, 90);
+  assert.equal(geom.topH, 230);
+
+  // 低层高房间应自动压缩窗高使其不越出天花板
+  const lowRoom = { w: 400, d: 340, h: 200 };
+  const geomLow = Geometry.getOpeningGeometry(win, lowRoom);
+  assert.equal(geomLow.topH, 200);
+
+  // 窗户紧贴家具不应触发 door_blocked 报警
+  const showerNearWin = { id: 'sh2', name: '淋浴房', x: 100, y: 0, w: 90, d: 90, h: 210, rotation: 0 };
+  const resWin = Geometry.analyzeLayout(room, [showerNearWin], [win]);
+  assert.ok(!resWin.warnings.some((w) => w.type === 'door_blocked'), '窗户不应触发内开门扇遮挡报警');
+}
+
+console.log('ALL GEOMETRY TESTS PASSED (11/11 groups)');

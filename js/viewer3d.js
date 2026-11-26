@@ -321,6 +321,53 @@
           if (geom.offset > cursor) {
             drawWallSegment(wObj, cursor, geom.offset, 0, wallH, wallFill, wallStroke, 1);
           }
+
+          if (geom.type === 'window') {
+            if (!wObj.front) {
+              if (geom.sillH > 0) {
+                drawWallSegment(wObj, geom.offset, geom.offset + geom.width, 0, geom.sillH, wallFill, wallStroke, 1);
+              }
+              if (room.h > geom.topH) {
+                drawWallSegment(wObj, geom.offset, geom.offset + geom.width, geom.topH, room.h, wallFill, wallStroke, 1);
+              }
+              // 半透明天蓝玻璃窗扇与中梃线
+              drawWallSegment(
+                wObj,
+                geom.offset,
+                geom.offset + geom.width,
+                geom.sillH,
+                geom.topH,
+                'rgba(186, 230, 253, 0.36)',
+                '#0284c7',
+                1
+              );
+              const midT = geom.offset + geom.width / 2;
+              const m0 = project(...wObj.toWorld(midT, geom.sillH));
+              const m1 = project(...wObj.toWorld(midT, geom.topH));
+              ctx.save();
+              ctx.strokeStyle = '#0284c7';
+              ctx.lineWidth = 1.3;
+              ctx.beginPath();
+              ctx.moveTo(m0.sx, m0.sy);
+              ctx.lineTo(m1.sx, m1.sy);
+              ctx.stroke();
+              ctx.restore();
+            } else {
+              drawWallSegment(
+                wObj,
+                geom.offset,
+                geom.offset + geom.width,
+                0,
+                wallH,
+                'rgba(186, 230, 253, 0.45)',
+                '#0284c7',
+                1
+              );
+            }
+            cursor = Math.max(cursor, geom.offset + geom.width);
+            continue;
+          }
+
           // 门洞上方过梁
           if (!wObj.front && room.h > doorH) {
             drawWallSegment(wObj, geom.offset, geom.offset + geom.width, doorH, room.h, wallFill, wallStroke, 1);

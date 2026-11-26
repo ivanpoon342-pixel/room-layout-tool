@@ -52,15 +52,30 @@
           Number.isFinite(op.offset) &&
           Number.isFinite(op.width)
       )
-      .map((op) => ({
-        id: op.id,
-        name: typeof op.name === 'string' && op.name.trim() ? op.name.trim() : '门口',
-        wall: op.wall,
-        offset: Math.round(op.offset),
-        width: Math.max(30, Math.min(400, Math.round(op.width))),
-        swing: op.swing === 'out' || op.swing === 'none' ? op.swing : 'in',
-        hinge: op.hinge === 'end' ? 'end' : 'start'
-      }));
+      .map((op) => {
+        const type = op.type === 'window' ? 'window' : 'door';
+        const defaultName = type === 'window' ? '窗户' : '门口';
+        const sillDefault = type === 'window' ? 90 : 0;
+        const openHDefault = type === 'window' ? 140 : 210;
+        const sillH = Number.isFinite(Number(op.sillH))
+          ? Math.max(0, Math.min(400, Math.round(Number(op.sillH))))
+          : sillDefault;
+        const openH = Number.isFinite(Number(op.openH))
+          ? Math.max(30, Math.min(400, Math.round(Number(op.openH))))
+          : openHDefault;
+        return {
+          id: op.id,
+          type,
+          name: typeof op.name === 'string' && op.name.trim() ? op.name.trim() : defaultName,
+          wall: op.wall,
+          offset: Math.round(op.offset),
+          width: Math.max(30, Math.min(400, Math.round(op.width))),
+          swing: type === 'window' ? 'none' : op.swing === 'out' || op.swing === 'none' ? op.swing : 'in',
+          hinge: op.hinge === 'end' ? 'end' : 'start',
+          sillH,
+          openH
+        };
+      });
   }
 
   function cloneNotes(notes) {

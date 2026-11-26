@@ -84,7 +84,24 @@
       ctx.lineTo(v.px2, v.py2);
       ctx.stroke();
 
-      if (geom.swing !== 'none') {
+      if (geom.type === 'window') {
+        const thick = 7;
+        ctx.fillStyle = '#e0f2fe';
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = 1.4;
+        if (geom.wall === 'top' || geom.wall === 'bottom') {
+          ctx.fillRect(v.px1, v.py1 - thick / 2, Math.max(2, v.px2 - v.px1), thick);
+          ctx.strokeRect(v.px1, v.py1 - thick / 2, Math.max(2, v.px2 - v.px1), thick);
+        } else {
+          ctx.fillRect(v.px1 - thick / 2, v.py1, thick, Math.max(2, v.py2 - v.py1));
+          ctx.strokeRect(v.px1 - thick / 2, v.py1, thick, Math.max(2, v.py2 - v.py1));
+        }
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(v.px1, v.py1);
+        ctx.lineTo(v.px2, v.py2);
+        ctx.stroke();
+      } else if (geom.swing !== 'none') {
         const a1 = Math.atan2(v.jy - v.hy, v.jx - v.hx);
         const a2 = Math.atan2(v.ty - v.hy, v.tx - v.hx);
         const anticlockwise = v.cross < 0;
@@ -122,7 +139,7 @@
         ctx.setLineDash([]);
       }
 
-      // 门垛端线
+      // 门垛/窗垛端线
       ctx.strokeStyle = '#1e293b';
       ctx.lineWidth = 2.2;
       ctx.beginPath();
@@ -139,8 +156,9 @@
       }
       ctx.stroke();
 
-      // 门口标签
-      const labelText = `${op.name || '门口'} ${geom.width}cm`;
+      // 门口/窗户标签
+      const defaultLabel = geom.type === 'window' ? '窗户' : '门口';
+      const labelText = `${op.name || defaultLabel} ${geom.width}cm`;
       ctx.font = `600 11px ${FONT_FAMILY}`;
       const pillW = Math.max(58, ctx.measureText(labelText).width + 14);
       const pillH = 20;

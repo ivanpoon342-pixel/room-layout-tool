@@ -357,14 +357,24 @@
   }
 
   /**
-   * 墙边门口/洞口几何计算：返回在房间边缘的起止坐标及内开扫掠区矩形
+   * 墙边门口/窗户几何计算：返回在房间边缘的起止坐标、窗台/洞口高度及内开扫掠区矩形
    */
   function getOpeningGeometry(opening, room) {
+    const type = opening.type === 'window' ? 'window' : 'door';
     const wallLen = opening.wall === 'top' || opening.wall === 'bottom' ? room.w : room.d;
-    const width = Math.max(30, Math.min(opening.width || 80, wallLen));
+    const width = Math.max(30, Math.min(opening.width || (type === 'window' ? 150 : 80), wallLen));
     const offset = Math.max(0, Math.min(opening.offset || 0, wallLen - width));
-    const swing = opening.swing === 'out' || opening.swing === 'none' ? opening.swing : 'in';
+    const swing = type === 'window' ? 'none' : opening.swing === 'out' || opening.swing === 'none' ? opening.swing : 'in';
     const hinge = opening.hinge === 'end' ? 'end' : 'start';
+
+    const rawSill = Number.isFinite(Number(opening.sillH))
+      ? Math.max(0, Math.round(Number(opening.sillH)))
+      : type === 'window' ? 90 : 0;
+    const sillH = type === 'window' ? Math.min(rawSill, Math.max(0, room.h - 30)) : 0;
+    const rawOpenH = Number.isFinite(Number(opening.openH))
+      ? Math.max(30, Math.round(Number(opening.openH)))
+      : type === 'window' ? 140 : 210;
+    const openH = Math.min(rawOpenH, Math.max(30, room.h - sillH));
 
     let x1 = 0;
     let y1 = 0;
@@ -417,11 +427,15 @@
     }
 
     return {
+      type,
       wall: opening.wall,
       offset,
       width,
       swing,
       hinge,
+      sillH,
+      openH,
+      topH: sillH + openH,
       x1,
       y1,
       x2,

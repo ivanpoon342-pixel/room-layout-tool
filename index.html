@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>简排 · 轻量化家装布局试排工具</title>
-  <link rel="stylesheet" href="css/style.css?v=4">
+  <link rel="stylesheet" href="css/style.css?v=5">
 </head>
 <body>
   <div class="app-shell">
@@ -179,7 +179,7 @@
     </div>
   </div>
 
-  <!-- 墙边门口定制浮层 -->
+  <!-- 墙边门口/窗户定制浮层 -->
   <div id="opening-modal" class="modal-backdrop" hidden>
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="opening-modal-title">
       <div class="modal-header">
@@ -188,21 +188,17 @@
       </div>
 
       <div class="preset-row">
-        <span class="field-label">常用门洞宽度（点击即改）</span>
-        <div id="opening-preset-chips" class="preset-chips">
-          <button type="button" class="preset-chip" data-width="75">75cm (卫浴门)</button>
-          <button type="button" class="preset-chip" data-width="85">85cm (卧室门)</button>
-          <button type="button" class="preset-chip" data-width="100">100cm (大门口)</button>
-        </div>
+        <span id="opening-preset-label" class="field-label">常用门洞宽度（点击即改）</span>
+        <div id="opening-preset-chips" class="preset-chips"></div>
       </div>
 
       <div class="form-grid-2">
         <label class="form-field">
-          <span>门口名称</span>
+          <span id="opening-name-label">门口名称</span>
           <input id="open-edit-name" type="text" maxlength="14" placeholder="如：卫生间门">
         </label>
         <label class="form-field">
-          <span>门洞宽度 (cm)</span>
+          <span id="opening-width-label">门洞宽度 (cm)</span>
           <input id="open-edit-width" type="number" min="30" max="400" step="1">
         </label>
       </div>
@@ -217,7 +213,7 @@
             <option value="right">右墙</option>
           </select>
         </label>
-        <label class="form-field">
+        <label id="door-swing-field" class="form-field">
           <span>开门方式</span>
           <select id="open-edit-swing">
             <option value="in">内开扇门</option>
@@ -225,12 +221,20 @@
             <option value="none">推拉 / 门洞</option>
           </select>
         </label>
-        <label class="form-field">
+        <label id="door-hinge-field" class="form-field">
           <span>门轴位置</span>
           <select id="open-edit-hinge">
             <option value="start">左/上侧</option>
             <option value="end">右/下侧</option>
           </select>
+        </label>
+        <label id="win-sill-field" class="form-field" hidden>
+          <span>窗台高 (cm)</span>
+          <input id="open-edit-sill" type="number" min="0" max="240" step="5">
+        </label>
+        <label id="win-height-field" class="form-field" hidden>
+          <span>窗高 (cm)</span>
+          <input id="open-edit-height" type="number" min="30" max="320" step="5">
         </label>
       </div>
 
@@ -305,13 +309,13 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <script src="js/catalog.js?v=4"></script>
-  <script src="js/geometry.js?v=4"></script>
-  <script src="js/layouts.js?v=4"></script>
-  <script src="js/renderer.js?v=4"></script>
-  <script src="js/viewer3d.js?v=4"></script>
-  <script src="js/vr.js?v=4"></script>
-  <script src="js/exporter.js?v=4"></script>
-  <script src="js/app.js?v=4"></script>
+  <script src="js/catalog.js?v=5"></script>
+  <script src="js/geometry.js?v=5"></script>
+  <script src="js/layouts.js?v=5"></script>
+  <script src="js/renderer.js?v=5"></script>
+  <script src="js/viewer3d.js?v=5"></script>
+  <script src="js/vr.js?v=5"></script>
+  <script src="js/exporter.js?v=5"></script>
+  <script src="js/app.js?v=5"></script>
 </body>
 </html>
