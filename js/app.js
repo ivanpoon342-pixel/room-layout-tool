@@ -417,7 +417,7 @@
       name: cat.name,
       w: cat.w,
       d: cat.d,
-      h: cat.h,
+      h: cat.matchRoomHeight ? state.room.h : cat.h,
       x: Math.round(place.x),
       y: Math.round(place.y),
       rotation: 0,
@@ -584,10 +584,10 @@
     const hRaw = Number(dom.editH.value);
 
     if (Number.isFinite(wRaw) && wRaw >= 3) {
-      item.w = shouldClamp ? clamp(Math.round(wRaw), 3, 600) : Math.round(wRaw);
+      item.w = shouldClamp ? clamp(Math.round(wRaw), 3, 2000) : Math.round(wRaw);
     }
     if (Number.isFinite(dRaw) && dRaw >= 3) {
-      item.d = shouldClamp ? clamp(Math.round(dRaw), 3, 600) : Math.round(dRaw);
+      item.d = shouldClamp ? clamp(Math.round(dRaw), 3, 2000) : Math.round(dRaw);
     }
     if (Number.isFinite(hRaw) && hRaw >= 10) {
       item.h = shouldClamp ? clamp(Math.round(hRaw), 10, 500) : Math.round(hRaw);
@@ -984,7 +984,14 @@
           id,
           dir,
           startItem: { ...item },
-          minDim: Math.min(item.w, item.d) < 15 || item.catalogId === 'partition-screen' ? 3 : 15,
+          minDim:
+            item.catalogId === 'partition-screen'
+              ? 3
+              : item.catalogId === 'interior-wall'
+              ? 6
+              : Math.min(item.w, item.d) < 15
+              ? 3
+              : 15,
           moved: false
         };
         refreshCanvas();
@@ -1807,7 +1814,7 @@
       if (!preset) return;
       item.w = preset.w;
       item.d = preset.d;
-      item.h = preset.h;
+      item.h = preset.h === 'room' ? state.room.h : preset.h;
       dom.editW.value = item.w;
       dom.editD.value = item.d;
       dom.editH.value = item.h;
@@ -1823,7 +1830,7 @@
       if (!cat) return;
       item.w = cat.w;
       item.d = cat.d;
-      item.h = cat.h;
+      item.h = cat.matchRoomHeight ? state.room.h : cat.h;
       item.name = cat.name;
       dom.editName.value = item.name;
       dom.editW.value = item.w;

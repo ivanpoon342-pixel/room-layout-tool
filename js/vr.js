@@ -525,9 +525,18 @@
     // 家具缩略块
     if (Geometry) {
       for (let i = 0; i < items.length; i++) {
-        const fp = Geometry.getFootprint(items[i]);
-        ctx.fillStyle = 'rgba(15, 118, 110, 0.22)';
-        ctx.strokeStyle = 'rgba(15, 118, 110, 0.65)';
+        const it = items[i];
+        const fp = Geometry.getFootprint(it);
+        if (it.catalogId === 'interior-wall') {
+          ctx.fillStyle = 'rgba(51, 65, 85, 0.78)';
+          ctx.strokeStyle = '#1e293b';
+        } else if (it.catalogId === 'stairs-straight' || it.catalogId === 'stairs-l') {
+          ctx.fillStyle = 'rgba(217, 119, 6, 0.28)';
+          ctx.strokeStyle = '#b45309';
+        } else {
+          ctx.fillStyle = 'rgba(15, 118, 110, 0.22)';
+          ctx.strokeStyle = 'rgba(15, 118, 110, 0.65)';
+        }
         ctx.lineWidth = 0.8;
         ctx.fillRect(
           mm.originX + fp.x * mm.scale,
@@ -657,7 +666,8 @@
     ctx.textBaseline = 'middle';
     for (let i = 0; i < labelSpecs.length; i++) {
       const spec = labelSpecs[i];
-      const pCam = worldToCamera(spec.labelWorld[0], spec.labelWorld[1], spec.labelWorld[2], cam);
+      const labelZ = Math.min(spec.labelWorld[2], Math.max(120, room.h - 22));
+      const pCam = worldToCamera(spec.labelWorld[0], spec.labelWorld[1], labelZ, cam);
       if (pCam.cz < 28) continue;
       const p = projectCamPoint(pCam, halfW, halfH, focalPx);
       if (p.sx < -40 || p.sx > width + 40 || p.sy < -20 || p.sy > height + 20) continue;

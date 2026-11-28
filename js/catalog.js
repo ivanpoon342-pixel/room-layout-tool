@@ -8,6 +8,7 @@
 
   const CATEGORIES = [
     { id: 'all', label: '全部' },
+    { id: 'structure', label: '结构' },
     { id: 'bedroom', label: '卧室' },
     { id: 'study', label: '书房' },
     { id: 'living', label: '客餐' },
@@ -579,6 +580,299 @@
     ctx.restore();
   }
 
+  // 室内隔墙（实心墙体 + 45° 斜线建筑填充，无 clipPath ID 冲突）
+  function drawInteriorWallSvg(w, d, fill, stroke) {
+    const step = Math.max(7, Math.min(12, Math.max(w, d) / 14));
+    const lines = [];
+    for (let c = step; c < w + d - 2; c += step) {
+      const x1 = Math.max(1.2, c - (d - 1.2));
+      const y1 = c - x1;
+      const x2 = Math.min(w - 1.2, c - 1.2);
+      const y2 = c - x2;
+      if (x2 > x1 + 0.5) {
+        lines.push(`<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${stroke}" stroke-width="0.9" opacity="0.45"/>`);
+      }
+    }
+    return [
+      `<rect x="0.75" y="0.75" width="${Math.max(1, w - 1.5)}" height="${Math.max(1, d - 1.5)}" rx="1" fill="${fill}" stroke="${stroke}" stroke-width="1.8"/>`,
+      ...lines
+    ].join('');
+  }
+
+  function drawInteriorWallCanvas(ctx, w, d, fill, stroke) {
+    canvasBox(ctx, w, d, fill, stroke, 1);
+    const step = Math.max(7, Math.min(12, Math.max(w, d) / 14));
+    ctx.save();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 0.9;
+    ctx.globalAlpha = 0.45;
+    ctx.beginPath();
+    for (let c = step; c < w + d - 2; c += step) {
+      const x1 = Math.max(1.2, c - (d - 1.2));
+      const y1 = c - x1;
+      const x2 = Math.min(w - 1.2, c - 1.2);
+      const y2 = c - x2;
+      if (x2 > x1 + 0.5) {
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+      }
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 直跑楼梯（踏步线 + 上行方向箭头，d>=w 时由下向上，否则由左向右）
+  function drawStraightStairsSvg(w, d, fill, stroke) {
+    const alongY = d >= w;
+    const longLen = alongY ? d : w;
+    const shortLen = alongY ? w : d;
+    const maxSteps = longLen < 50 ? 7 : 12;
+    const steps = Math.max(5, Math.min(maxSteps, Math.round((longLen / Math.max(8, shortLen)) * 4)));
+    const lines = [];
+
+    if (shortLen >= 18) {
+      const inset = Math.max(1.8, shortLen * 0.07);
+      if (alongY) {
+        lines.push(`<line x1="${inset}" y1="1.5" x2="${inset}" y2="${d - 1.5}" stroke="${stroke}" stroke-width="0.9" opacity="0.45"/>`);
+        lines.push(`<line x1="${w - inset}" y1="1.5" x2="${w - inset}" y2="${d - 1.5}" stroke="${stroke}" stroke-width="0.9" opacity="0.45"/>`);
+      } else {
+        lines.push(`<line x1="1.5" y1="${inset}" x2="${w - 1.5}" y2="${inset}" stroke="${stroke}" stroke-width="0.9" opacity="0.45"/>`);
+        lines.push(`<line x1="1.5" y1="${d - inset}" x2="${w - 1.5}" y2="${d - inset}" stroke="${stroke}" stroke-width="0.9" opacity="0.45"/>`);
+      }
+    }
+
+    for (let i = 1; i < steps; i++) {
+      const pos = (longLen / steps) * i;
+      if (alongY) {
+        lines.push(`<line x1="1.5" y1="${pos}" x2="${w - 1.5}" y2="${pos}" stroke="${stroke}" stroke-width="0.9" opacity="0.6"/>`);
+      } else {
+        lines.push(`<line x1="${pos}" y1="1.5" x2="${pos}" y2="${d - 1.5}" stroke="${stroke}" stroke-width="0.9" opacity="0.6"/>`);
+      }
+    }
+
+    const rStart = Math.max(1.8, Math.min(3.2, shortLen * 0.05));
+    const head = Math.max(3.5, Math.min(7, shortLen * 0.14));
+    let arrowSvg = '';
+    if (alongY) {
+      const cx = w / 2;
+      const yStart = d * 0.86;
+      const yEnd = d * 0.14;
+      arrowSvg =
+        `<circle cx="${cx}" cy="${yStart}" r="${rStart}" fill="${stroke}"/>` +
+        `<line x1="${cx}" y1="${yStart}" x2="${cx}" y2="${yEnd}" stroke="${stroke}" stroke-width="1.4" stroke-linecap="round"/>` +
+        `<path d="M ${cx - head} ${yEnd + head} L ${cx} ${yEnd} L ${cx + head} ${yEnd + head}" fill="none" stroke="${stroke}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`;
+    } else {
+      const cy = d / 2;
+      const xStart = w * 0.14;
+      const xEnd = w * 0.86;
+      arrowSvg =
+        `<circle cx="${xStart}" cy="${cy}" r="${rStart}" fill="${stroke}"/>` +
+        `<line x1="${xStart}" y1="${cy}" x2="${xEnd}" y2="${cy}" stroke="${stroke}" stroke-width="1.4" stroke-linecap="round"/>` +
+        `<path d="M ${xEnd - head} ${cy - head} L ${xEnd} ${cy} L ${xEnd - head} ${cy + head}" fill="none" stroke="${stroke}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`;
+    }
+
+    return [svgBox(w, d, fill, stroke, 2), ...lines, arrowSvg].join('');
+  }
+
+  function drawStraightStairsCanvas(ctx, w, d, fill, stroke) {
+    canvasBox(ctx, w, d, fill, stroke, 2);
+    const alongY = d >= w;
+    const longLen = alongY ? d : w;
+    const shortLen = alongY ? w : d;
+    const maxSteps = longLen < 50 ? 7 : 12;
+    const steps = Math.max(5, Math.min(maxSteps, Math.round((longLen / Math.max(8, shortLen)) * 4)));
+
+    ctx.save();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 0.9;
+    if (shortLen >= 18) {
+      const inset = Math.max(1.8, shortLen * 0.07);
+      ctx.globalAlpha = 0.45;
+      ctx.beginPath();
+      if (alongY) {
+        ctx.moveTo(inset, 1.5);
+        ctx.lineTo(inset, d - 1.5);
+        ctx.moveTo(w - inset, 1.5);
+        ctx.lineTo(w - inset, d - 1.5);
+      } else {
+        ctx.moveTo(1.5, inset);
+        ctx.lineTo(w - 1.5, inset);
+        ctx.moveTo(1.5, d - inset);
+        ctx.lineTo(w - 1.5, d - inset);
+      }
+      ctx.stroke();
+    }
+
+    ctx.globalAlpha = 0.6;
+    ctx.beginPath();
+    for (let i = 1; i < steps; i++) {
+      const pos = (longLen / steps) * i;
+      if (alongY) {
+        ctx.moveTo(1.5, pos);
+        ctx.lineTo(w - 1.5, pos);
+      } else {
+        ctx.moveTo(pos, 1.5);
+        ctx.lineTo(pos, d - 1.5);
+      }
+    }
+    ctx.stroke();
+
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = stroke;
+    ctx.lineWidth = 1.4;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    const rStart = Math.max(1.8, Math.min(3.2, shortLen * 0.05));
+    const head = Math.max(3.5, Math.min(7, shortLen * 0.14));
+
+    if (alongY) {
+      const cx = w / 2;
+      const yStart = d * 0.86;
+      const yEnd = d * 0.14;
+      ctx.beginPath();
+      ctx.arc(cx, yStart, rStart, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(cx, yStart);
+      ctx.lineTo(cx, yEnd);
+      ctx.moveTo(cx - head, yEnd + head);
+      ctx.lineTo(cx, yEnd);
+      ctx.lineTo(cx + head, yEnd + head);
+      ctx.stroke();
+    } else {
+      const cy = d / 2;
+      const xStart = w * 0.14;
+      const xEnd = w * 0.86;
+      ctx.beginPath();
+      ctx.arc(xStart, cy, rStart, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(xStart, cy);
+      ctx.lineTo(xEnd, cy);
+      ctx.moveTo(xEnd - head, cy - head);
+      ctx.lineTo(xEnd, cy);
+      ctx.lineTo(xEnd - head, cy + head);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // L型转角楼梯（下段由下向上进左上平台，右转上行向右）
+  function drawLStairsSvg(w, d, fill, stroke) {
+    const runW = Math.max(6, Math.min(w, d) * 0.48);
+    const n1 = d < 50 ? 3 : 5;
+    const n2 = w < 50 ? 3 : 5;
+    const lowerLen = Math.max(2, d - 0.75 - runW);
+    const upperLen = Math.max(2, w - 0.75 - runW);
+    const lines = [];
+
+    lines.push(`<line x1="0.75" y1="${runW}" x2="${runW}" y2="${runW}" stroke="${stroke}" stroke-width="1" opacity="0.65"/>`);
+    lines.push(`<line x1="${runW}" y1="0.75" x2="${runW}" y2="${runW}" stroke="${stroke}" stroke-width="1" opacity="0.65"/>`);
+
+    for (let i = 1; i < n1; i++) {
+      const y = runW + (lowerLen / n1) * i;
+      lines.push(`<line x1="1.2" y1="${y}" x2="${runW - 0.8}" y2="${y}" stroke="${stroke}" stroke-width="0.9" opacity="0.58"/>`);
+    }
+    for (let j = 1; j < n2; j++) {
+      const x = runW + (upperLen / n2) * j;
+      lines.push(`<line x1="${x}" y1="1.2" x2="${x}" y2="${runW - 0.8}" stroke="${stroke}" stroke-width="0.9" opacity="0.58"/>`);
+    }
+
+    const pad = Math.max(4, Math.min(12, runW * 0.2));
+    const ax = runW / 2;
+    const ay = runW / 2;
+    const startY = Math.max(ay + 4, d - pad);
+    const endX = Math.max(ax + 4, w - pad);
+    const rStart = Math.max(1.8, Math.min(3, runW * 0.06));
+    const head = Math.max(3.2, Math.min(6.5, runW * 0.14));
+
+    const lPath = `M 0.75 0.75 L ${w - 0.75} 0.75 L ${w - 0.75} ${runW} L ${runW} ${runW} L ${runW} ${d - 0.75} L 0.75 ${d - 0.75} Z`;
+    return [
+      `<rect x="0.75" y="0.75" width="${Math.max(1, w - 1.5)}" height="${Math.max(1, d - 1.5)}" rx="2" fill="none" stroke="${stroke}" stroke-width="0.9" stroke-dasharray="3 3" opacity="0.3"/>`,
+      `<path d="${lPath}" fill="${fill}" stroke="${stroke}" stroke-width="1.5" stroke-linejoin="round"/>`,
+      ...lines,
+      `<circle cx="${ax}" cy="${startY}" r="${rStart}" fill="${stroke}"/>`,
+      `<path d="M ${ax} ${startY} L ${ax} ${ay} L ${endX} ${ay}" fill="none" stroke="${stroke}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>`,
+      `<path d="M ${endX - head} ${ay - head} L ${endX} ${ay} L ${endX - head} ${ay + head}" fill="none" stroke="${stroke}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`
+    ].join('');
+  }
+
+  function drawLStairsCanvas(ctx, w, d, fill, stroke) {
+    const runW = Math.max(6, Math.min(w, d) * 0.48);
+    const n1 = d < 50 ? 3 : 5;
+    const n2 = w < 50 ? 3 : 5;
+    const lowerLen = Math.max(2, d - 0.75 - runW);
+    const upperLen = Math.max(2, w - 0.75 - runW);
+
+    ctx.save();
+    ctx.strokeStyle = stroke;
+    ctx.globalAlpha = 0.3;
+    ctx.lineWidth = 0.9;
+    ctx.setLineDash([3, 3]);
+    ctx.strokeRect(0.75, 0.75, Math.max(1, w - 1.5), Math.max(1, d - 1.5));
+    ctx.setLineDash([]);
+
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = fill;
+    ctx.lineWidth = 1.5;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0.75, 0.75);
+    ctx.lineTo(w - 0.75, 0.75);
+    ctx.lineTo(w - 0.75, runW);
+    ctx.lineTo(runW, runW);
+    ctx.lineTo(runW, d - 0.75);
+    ctx.lineTo(0.75, d - 0.75);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.globalAlpha = 0.6;
+    ctx.lineWidth = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(0.75, runW);
+    ctx.lineTo(runW, runW);
+    ctx.moveTo(runW, 0.75);
+    ctx.lineTo(runW, runW);
+    for (let i = 1; i < n1; i++) {
+      const y = runW + (lowerLen / n1) * i;
+      ctx.moveTo(1.2, y);
+      ctx.lineTo(runW - 0.8, y);
+    }
+    for (let j = 1; j < n2; j++) {
+      const x = runW + (upperLen / n2) * j;
+      ctx.moveTo(x, 1.2);
+      ctx.lineTo(x, runW - 0.8);
+    }
+    ctx.stroke();
+
+    const pad = Math.max(4, Math.min(12, runW * 0.2));
+    const ax = runW / 2;
+    const ay = runW / 2;
+    const startY = Math.max(ay + 4, d - pad);
+    const endX = Math.max(ax + 4, w - pad);
+    const rStart = Math.max(1.8, Math.min(3, runW * 0.06));
+    const head = Math.max(3.2, Math.min(6.5, runW * 0.14));
+
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = stroke;
+    ctx.beginPath();
+    ctx.arc(ax, startY, rStart, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.lineWidth = 1.4;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(ax, startY);
+    ctx.lineTo(ax, ay);
+    ctx.lineTo(endX, ay);
+    ctx.moveTo(endX - head, ay - head);
+    ctx.lineTo(endX, ay);
+    ctx.lineTo(endX - head, ay + head);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   // 墙边门口标记（图标栏缩略示意：墙线断点 + 门扇与开启弧）
   function drawWallDoorIconSvg(w, d, fill, stroke) {
     const wallY = Math.max(4, d * 0.2);
@@ -667,6 +961,58 @@
   }
 
   const FURNITURE_CATALOG = [
+    // 结构（墙体、楼梯、门窗、屏风）
+    {
+      id: 'interior-wall',
+      name: '室内隔墙',
+      category: 'structure',
+      categories: ['structure', 'bedroom', 'study', 'living', 'bath'],
+      w: 200, d: 12, h: 280,
+      matchRoomHeight: true,
+      fill: '#cbd5e1', stroke: '#334155',
+      presets: [
+        { label: '200×12 (通顶隔墙)', w: 200, d: 12, h: 'room' },
+        { label: '150×12 (短隔墙)', w: 150, d: 12, h: 'room' },
+        { label: '120×15 (半高矮墙 1.2m)', w: 120, d: 15, h: 120 },
+        { label: '300×20 (加厚实体墙)', w: 300, d: 20, h: 'room' }
+      ],
+      drawSvg: drawInteriorWallSvg,
+      drawCanvas: drawInteriorWallCanvas
+    },
+    {
+      id: 'stairs-straight',
+      name: '直跑楼梯',
+      category: 'structure',
+      categories: ['structure', 'living', 'bedroom', 'study'],
+      w: 100, d: 240, h: 280,
+      matchRoomHeight: true,
+      fill: '#fffbeb', stroke: '#b45309',
+      presets: [
+        { label: '100×240 (标准直梯)', w: 100, d: 240, h: 'room' },
+        { label: '90×200 (紧凑直梯)', w: 90, d: 200, h: 'room' },
+        { label: '120×280 (宽敞直梯)', w: 120, d: 280, h: 'room' },
+        { label: '90×180 (阁楼短梯)', w: 90, d: 180, h: 220 }
+      ],
+      drawSvg: drawStraightStairsSvg,
+      drawCanvas: drawStraightStairsCanvas
+    },
+    {
+      id: 'stairs-l',
+      name: 'L型楼梯',
+      category: 'structure',
+      categories: ['structure', 'living', 'bedroom', 'study'],
+      w: 180, d: 200, h: 280,
+      matchRoomHeight: true,
+      fill: '#fffbeb', stroke: '#b45309',
+      presets: [
+        { label: '180×200 (标准L梯)', w: 180, d: 200, h: 'room' },
+        { label: '160×180 (紧凑L梯)', w: 160, d: 180, h: 'room' },
+        { label: '200×240 (宽敞L梯)', w: 200, d: 240, h: 'room' }
+      ],
+      drawSvg: drawLStairsSvg,
+      drawCanvas: drawLStairsCanvas
+    },
+
     // 卧室
     {
       id: 'bed-double',
@@ -931,7 +1277,7 @@
       name: '门口标记',
       kind: 'opening',
       category: 'bath',
-      categories: ['bedroom', 'study', 'living', 'bath'],
+      categories: ['structure', 'bedroom', 'study', 'living', 'bath'],
       w: 80, d: 80, h: 210,
       fill: '#e0f2fe', stroke: '#0284c7',
       presets: [
@@ -946,7 +1292,7 @@
       name: '窗户标记',
       kind: 'window',
       category: 'bedroom',
-      categories: ['bedroom', 'study', 'living', 'bath'],
+      categories: ['structure', 'bedroom', 'study', 'living', 'bath'],
       w: 150, d: 24, h: 140,
       fill: '#e0f2fe', stroke: '#0284c7',
       presets: [
@@ -962,7 +1308,7 @@
       name: '文字备注',
       kind: 'note',
       category: 'bath',
-      categories: ['bedroom', 'study', 'living', 'bath'],
+      categories: ['structure', 'bedroom', 'study', 'living', 'bath'],
       w: 70, d: 44, h: 10,
       fill: '#fffbeb', stroke: '#d97706',
       drawSvg: drawNoteIconSvg
@@ -971,7 +1317,7 @@
       id: 'partition-screen',
       name: '屏风隔断',
       category: 'bath',
-      categories: ['bath', 'living', 'bedroom'],
+      categories: ['structure', 'bath', 'living', 'bedroom'],
       w: 90, d: 6, h: 200,
       fill: '#e0f2fe', stroke: '#0e7490',
       presets: [

@@ -87,7 +87,7 @@
     const rot = (((startItem.rotation || 0) % 360) + 360) % 360;
     const swapped = rot === 90 || rot === 270;
     const minDim = Math.max(3, minSizeCm || 5);
-    const maxDim = 600;
+    const maxDim = Math.min(2000, Math.max(600, room.w || 600, room.d || 600));
 
     function snapCoord(val, axis) {
       if (disableSnap) return Math.round(val);

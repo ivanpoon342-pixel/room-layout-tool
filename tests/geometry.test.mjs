@@ -163,4 +163,26 @@ const room = { w: 400, d: 340, h: 280 };
   assert.ok(!resWin.warnings.some((w) => w.type === 'door_blocked'), '窗户不应触发内开门扇遮挡报警');
 }
 
-console.log('ALL GEOMETRY TESTS PASSED (11/11 groups)');
+// 12. 室内隔墙超长/薄墙拖拽缩放与楼梯布局占位校验
+{
+  const bigRoom = { w: 900, d: 600, h: 280 };
+  const wall = { id: 'iw1', name: '室内隔墙', x: 50, y: 120, w: 200, d: 12, h: 280, rotation: 0 };
+  const stretched = Geometry.resizeFromHandle(wall, 'e', 750, 126, bigRoom, [], true, 6);
+  assert.equal(stretched.w, 700, '室内隔墙应支持拉长超过 600cm');
+  assert.equal(stretched.d, 12);
+
+  const thinned = Geometry.resizeFromHandle(wall, 's', 150, 126, bigRoom, [], true, 6);
+  assert.equal(thinned.d, 6, '室内隔墙厚度可缩窄至 6cm');
+
+  const wall90 = { id: 'iw2', name: '室内隔墙', x: 200, y: 40, w: 200, d: 12, h: 280, rotation: 90 };
+  const stretched90 = Geometry.resizeFromHandle(wall90, 's', 206, 360, bigRoom, [], true, 6);
+  assert.equal(stretched90.w, 320, '旋转 90° 的室内隔墙纵向拉伸应更新原长度 w');
+  assert.equal(stretched90.d, 12);
+
+  const straightStairs = { id: 'st1', name: '直跑楼梯', x: 0, y: 0, w: 100, d: 240, h: 280, rotation: 0 };
+  const lStairs = { id: 'st2', name: 'L型楼梯', x: 300, y: 0, w: 180, d: 200, h: 280, rotation: 0 };
+  const resStairs = Geometry.analyzeLayout(bigRoom, [straightStairs, lStairs]);
+  assert.equal(resStairs.warnings.length, 0, '靠墙贴合且间距充足的楼梯不应产生误报');
+}
+
+console.log('ALL GEOMETRY TESTS PASSED (12/12 groups)');

@@ -167,4 +167,31 @@ const Layouts = require('../js/layouts.js');
   assert.equal(openings[1].openH, 80);
 }
 
-console.log('ALL LAYOUT STORE TESTS PASSED (6/6 groups)');
+// 7. 含室内隔墙与楼梯的多布局保存与切换隔离
+{
+  const store = Layouts.createEmptyStore();
+  const duplexRoom = { w: 700, d: 500, h: 280 };
+  const duplexItems = [
+    { id: 'w1', catalogId: 'interior-wall', name: '室内隔墙', w: 280, d: 12, h: 280, x: 200, y: 0, rotation: 90 },
+    { id: 's1', catalogId: 'stairs-straight', name: '直跑楼梯', w: 100, d: 240, h: 280, x: 0, y: 0, rotation: 0 },
+    { id: 's2', catalogId: 'stairs-l', name: 'L型楼梯', w: 180, d: 200, h: 280, x: 520, y: 0, rotation: 0 }
+  ];
+  const saved = Layouts.saveCurrentLayout(store, {
+    name: '复式一层',
+    room: duplexRoom,
+    items: duplexItems,
+    openings: []
+  });
+  assert.equal(saved.layout.items.length, 3);
+
+  const fresh = Layouts.createNewLayout(store, duplexRoom, duplexItems, [], false);
+  assert.equal(fresh.items.length, 0);
+
+  const restored = Layouts.switchLayout(store, saved.layout.id, fresh.room, [], [], false);
+  assert.equal(restored.items.length, 3);
+  assert.equal(restored.items[0].catalogId, 'interior-wall');
+  assert.equal(restored.items[1].catalogId, 'stairs-straight');
+  assert.equal(restored.items[2].catalogId, 'stairs-l');
+}
+
+console.log('ALL LAYOUT STORE TESTS PASSED (7/7 groups)');

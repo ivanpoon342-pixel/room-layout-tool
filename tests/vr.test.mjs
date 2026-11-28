@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
+require('../js/geometry.js');
+const Viewer3D = require('../js/viewer3d.js');
 const VRViewer = require('../js/vr.js');
 
 const room = { w: 400, d: 340, h: 280 };
@@ -64,4 +66,33 @@ const room = { w: 400, d: 340, h: 280 };
   assert.equal(clampedWall.y, VRViewer.WALL_MARGIN_CM);
 }
 
-console.log('ALL VR VIEWER TESTS PASSED (4/4 groups)');
+// 5. 室内隔墙分段实体建模与直跑/L型楼梯逐级升高 3D 建模
+{
+  const Geometry = globalThis.RoomLayout.Geometry;
+  const wall = { id: 'iw1', catalogId: 'interior-wall', name: '室内隔墙', x: 100, y: 0, w: 240, d: 12, h: 280, rotation: 0 };
+  const straight = { id: 'st1', catalogId: 'stairs-straight', name: '直跑楼梯', x: 0, y: 0, w: 100, d: 240, h: 280, rotation: 0 };
+  const lStair = { id: 'st2', catalogId: 'stairs-l', name: 'L型楼梯', x: 400, y: 0, w: 180, d: 200, h: 280, rotation: 0 };
+  const analysis = Geometry.analyzeLayout({ w: 600, d: 400, h: 280 }, [wall, straight, lStair], []);
+
+  const wallBuilt = Viewer3D.buildItemPrimitives(wall, analysis);
+  assert.equal(wallBuilt.boxes.length, 3, '240cm 长隔墙应分段为 3 个实体盒以便深度排序');
+  assert.ok(wallBuilt.boxes.every((b) => b.alpha === 1), '室内隔墙应为实心不透明');
+
+  const straightBuilt = Viewer3D.buildItemPrimitives(straight, analysis);
+  assert.ok(straightBuilt.boxes.length >= 6, '直跑楼梯应生成多级踏步盒');
+  const straightTops = straightBuilt.boxes.map((b) => Math.max(...b.faces[0].verts.map((v) => v[2])));
+  for (let i = 1; i < straightTops.length; i++) {
+    assert.ok(straightTops[i] > straightTops[i - 1], '直跑楼梯各级高度应严格递增');
+  }
+  assert.ok(Math.abs(straightTops[straightTops.length - 1] - 280) < 1e-6, '直跑楼梯最高级应达到层高');
+
+  const lBuilt = Viewer3D.buildItemPrimitives(lStair, analysis);
+  assert.ok(lBuilt.boxes.length >= 7, 'L型楼梯应生成下段+转角平台+上段多级踏步');
+  const lTops = lBuilt.boxes.map((b) => Math.max(...b.faces[0].verts.map((v) => v[2])));
+  for (let i = 1; i < lTops.length; i++) {
+    assert.ok(lTops[i] > lTops[i - 1], 'L型楼梯各级高度应严格递增');
+  }
+  assert.ok(Math.abs(lTops[lTops.length - 1] - 280) < 1e-6, 'L型楼梯最高级应达到层高');
+}
+
+console.log('ALL VR VIEWER TESTS PASSED (5/5 groups)');

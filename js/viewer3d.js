@@ -186,6 +186,12 @@
     if (catalogId === 'wardrobe' || catalogId === 'bookcase') {
       return { top: '#f5f0e6', sideA: '#e7decb', sideB: '#d6c7aa', stroke: '#785a3a' };
     }
+    if (catalogId === 'interior-wall') {
+      return { top: '#e2e8f0', sideA: '#f1f5f9', sideB: '#cbd5e1', stroke: '#475569' };
+    }
+    if (catalogId === 'stairs-straight' || catalogId === 'stairs-l') {
+      return { top: '#fef3c7', sideA: '#fde68a', sideB: '#fcd34d', stroke: '#92400e' };
+    }
     return { top: '#ffffff', sideA: '#f1f5f9', sideB: '#e2e8f0', stroke: '#475569' };
   }
 
@@ -229,6 +235,65 @@
       boxes.push(buildOrientedBoxFaces(fp.cx, fp.cy, rotRad, w / 2 - armW / 2, 0, 0, armW, d, seatH + 18, c, 1));
     } else if (item.catalogId === 'partition-screen') {
       boxes.push(buildOrientedBoxFaces(fp.cx, fp.cy, rotRad, 0, 0, 0, w, d, h, c, hasSevere ? 0.72 : 0.48));
+    } else if (item.catalogId === 'interior-wall') {
+      const segCount = Math.max(1, Math.ceil(Math.max(w, d) / 80));
+      if (w >= d) {
+        const segW = w / segCount;
+        for (let i = 0; i < segCount; i++) {
+          const localCx = -w / 2 + (i + 0.5) * segW;
+          boxes.push(buildOrientedBoxFaces(fp.cx, fp.cy, rotRad, localCx, 0, 0, segW, d, h, c, 1));
+        }
+      } else {
+        const segD = d / segCount;
+        for (let i = 0; i < segCount; i++) {
+          const localCy = -d / 2 + (i + 0.5) * segD;
+          boxes.push(buildOrientedBoxFaces(fp.cx, fp.cy, rotRad, 0, localCy, 0, w, segD, h, c, 1));
+        }
+      }
+    } else if (item.catalogId === 'stairs-straight') {
+      const alongY = d >= w;
+      const longCm = alongY ? d : w;
+      const steps = clamp(Math.round(longCm / 26), 6, 14);
+      for (let i = 0; i < steps; i++) {
+        const bh = ((i + 1) / steps) * h;
+        if (alongY) {
+          const stepD = d / steps;
+          const localCy = d / 2 - (i + 0.5) * stepD;
+          boxes.push(buildOrientedBoxFaces(fp.cx, fp.cy, rotRad, 0, localCy, 0, w, stepD, bh, c, 1));
+        } else {
+          const stepW = w / steps;
+          const localCx = -w / 2 + (i + 0.5) * stepW;
+          boxes.push(buildOrientedBoxFaces(fp.cx, fp.cy, rotRad, localCx, 0, 0, stepW, d, bh, c, 1));
+        }
+      }
+    } else if (item.catalogId === 'stairs-l') {
+      const runW = Math.max(20, Math.min(w, d) * 0.48);
+      const lowerLen = Math.max(10, d - runW);
+      const upperLen = Math.max(10, w - runW);
+      const nLower = clamp(Math.round(lowerLen / 26), 3, 7);
+      const nUpper = clamp(Math.round(upperLen / 26), 3, 7);
+      const totalSteps = nLower + 1 + nUpper;
+
+      for (let i = 0; i < nLower; i++) {
+        const stepD = lowerLen / nLower;
+        const localCx = -w / 2 + runW / 2;
+        const localCy = d / 2 - (i + 0.5) * stepD;
+        const bh = ((i + 1) / totalSteps) * h;
+        boxes.push(buildOrientedBoxFaces(fp.cx, fp.cy, rotRad, localCx, localCy, 0, runW, stepD, bh, c, 1));
+      }
+
+      const landingH = ((nLower + 1) / totalSteps) * h;
+      boxes.push(
+        buildOrientedBoxFaces(fp.cx, fp.cy, rotRad, -w / 2 + runW / 2, -d / 2 + runW / 2, 0, runW, runW, landingH, c, 1)
+      );
+
+      for (let j = 0; j < nUpper; j++) {
+        const stepW = upperLen / nUpper;
+        const localCx = -w / 2 + runW + (j + 0.5) * stepW;
+        const localCy = -d / 2 + runW / 2;
+        const bh = ((nLower + 2 + j) / totalSteps) * h;
+        boxes.push(buildOrientedBoxFaces(fp.cx, fp.cy, rotRad, localCx, localCy, 0, stepW, runW, bh, c, 1));
+      }
     } else if (item.catalogId === 'shower') {
       const baseH = 10;
       const gThick = 4;
@@ -656,4 +721,8 @@
     renderToElement,
     export3DPng
   };
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = global.RoomLayout.Viewer3D;
+  }
 })(typeof window !== 'undefined' ? window : globalThis);
