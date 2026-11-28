@@ -95,4 +95,25 @@ const room = { w: 400, d: 340, h: 280 };
   assert.ok(Math.abs(lTops[lTops.length - 1] - 280) < 1e-6, 'L型楼梯最高级应达到层高');
 }
 
-console.log('ALL VR VIEWER TESTS PASSED (5/5 groups)');
+// 6. 室内隔墙门洞切割 3D 实体与仅含自由门口时的 VR 默认站位
+{
+  const Geometry = globalThis.RoomLayout.Geometry;
+  const r = { w: 600, d: 450, h: 280 };
+  const wall = { id: 'iw1', catalogId: 'interior-wall', name: '室内隔墙', x: 100, y: 200, w: 300, d: 12, h: 280, rotation: 0 };
+  const freeDoor = { id: 'op1', type: 'door', name: '隔墙门', wall: 'free', x: 200, y: 206, orientation: 'h', width: 80, swing: 'in', hinge: 'start', openH: 210 };
+  const analysis = Geometry.analyzeLayout(r, [wall], [freeDoor]);
+
+  const built = Viewer3D.buildItemPrimitives(wall, analysis, [freeDoor], r);
+  const hasLintel = built.boxes.some((b) => {
+    const zs = b.faces[0].verts.map((v) => v[2]);
+    const minZ = Math.min(...b.faces[1].verts.map((v) => v[2]));
+    return minZ >= 209 && Math.max(...zs) >= 279;
+  });
+  assert.ok(hasLintel, '室内隔墙在门口上方应保留门楣过梁且下方镂空');
+
+  const camOnlyFree = VRViewer.createDefaultVRCamera(r, [wall], [freeDoor]);
+  assert.ok(camOnlyFree.x > 0 && camOnlyFree.x < r.w);
+  assert.ok(camOnlyFree.y > 0 && camOnlyFree.y < r.d);
+}
+
+console.log('ALL VR VIEWER TESTS PASSED (6/6 groups)');

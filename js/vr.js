@@ -23,8 +23,10 @@
     let x = cx;
     let y = Math.max(WALL_MARGIN_CM, room.d - 42);
 
-    if (list.length > 0) {
-      const op = list[0];
+    const outerList = list.filter((op) => op.wall !== 'free');
+    const preferredOp = outerList.find((op) => op.type !== 'window') || outerList[0];
+    if (preferredOp) {
+      const op = preferredOp;
       const wallLen = op.wall === 'top' || op.wall === 'bottom' ? room.w : room.d;
       const w = Math.max(30, Math.min(op.width || 80, wallLen));
       const off = clamp(op.offset || 0, 0, Math.max(0, wallLen - w));
@@ -616,7 +618,7 @@
     for (let i = 0; i < items.length; i++) {
       const built =
         Viewer3D && Viewer3D.buildItemPrimitives
-          ? Viewer3D.buildItemPrimitives(items[i], analysis)
+          ? Viewer3D.buildItemPrimitives(items[i], analysis, openings, room)
           : fallbackItemPrimitives(items[i]);
       labelSpecs.push(built);
 
@@ -650,6 +652,58 @@
             alpha: box.alpha
           });
         }
+      }
+    }
+
+    const opList = Array.isArray(openings) ? openings : [];
+    if (Viewer3D && Viewer3D.getFreeDoor3DData) {
+      for (let i = 0; i < opList.length; i++) {
+        const op = opList[i];
+        if (op.wall !== 'free') continue;
+        const fd = Viewer3D.getFreeDoor3DData(op, room, analysis);
+        if (fd.leafVerts) {
+          const midCam = worldToCamera(
+            (fd.leafVerts[0][0] + fd.leafVerts[1][0]) / 2,
+            (fd.leafVerts[0][1] + fd.leafVerts[1][1]) / 2,
+            fd.doorH / 2,
+            cam
+          );
+          if (midCam.cz >= NEAR_CLIP_CM - 120) {
+            faceQueue.push({
+              verts: fd.leafVerts,
+              avgCz: midCam.cz,
+              fill: fd.fill,
+              stroke: fd.stroke,
+              lineWidth: 1.5,
+              alpha: 1
+            });
+          }
+        }
+        const drawNearClippedSeg = (aWorld, bWorld, color) => {
+          let pa = worldToCamera(aWorld[0], aWorld[1], aWorld[2], cam);
+          let pb = worldToCamera(bWorld[0], bWorld[1], bWorld[2], cam);
+          if (pa.cz < NEAR_CLIP_CM && pb.cz < NEAR_CLIP_CM) return;
+          if (pa.cz < NEAR_CLIP_CM) {
+            const t = (NEAR_CLIP_CM - pa.cz) / (pb.cz - pa.cz);
+            pa = { cx: pa.cx + (pb.cx - pa.cx) * t, cy: pa.cy + (pb.cy - pa.cy) * t, cz: NEAR_CLIP_CM };
+          } else if (pb.cz < NEAR_CLIP_CM) {
+            const t = (NEAR_CLIP_CM - pb.cz) / (pa.cz - pb.cz);
+            pb = { cx: pb.cx + (pa.cx - pb.cx) * t, cy: pb.cy + (pa.cy - pb.cy) * t, cz: NEAR_CLIP_CM };
+          }
+          const s1 = projectCamPoint(pa, halfW, halfH, focalPx);
+          const s2 = projectCamPoint(pb, halfW, halfH, focalPx);
+          ctx.save();
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 2.4;
+          ctx.beginPath();
+          ctx.moveTo(s1.sx, s1.sy);
+          ctx.lineTo(s2.sx, s2.sy);
+          ctx.stroke();
+          ctx.restore();
+        };
+        drawNearClippedSeg(fd.jamb1[0], fd.jamb1[1], fd.stroke);
+        drawNearClippedSeg(fd.jamb2[0], fd.jamb2[1], fd.stroke);
+        drawNearClippedSeg(fd.header[0], fd.header[1], fd.stroke);
       }
     }
 

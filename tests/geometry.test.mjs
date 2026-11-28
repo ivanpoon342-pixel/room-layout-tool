@@ -185,4 +185,37 @@ const room = { w: 400, d: 340, h: 280 };
   assert.equal(resStairs.warnings.length, 0, '靠墙贴合且间距充足的楼梯不应产生误报');
 }
 
-console.log('ALL GEOMETRY TESTS PASSED (12/12 groups)');
+// 13. 任意位置门口（外墙吸附、室内隔墙开洞、自由放置与扇区防误报）
+{
+  const bigRoom = { w: 600, d: 450, h: 280 };
+  const vWall = { id: 'iw1', catalogId: 'interior-wall', name: '室内隔墙', x: 250, y: 50, w: 12, d: 240, h: 280, rotation: 0 };
+
+  // 靠近外墙应吸附外墙
+  const nearTop = Geometry.snapDoorPosition(200, 6, 80, bigRoom, [vWall], 'h', false);
+  assert.equal(nearTop.wall, 'top');
+
+  // 靠近竖直室内隔墙应自动吸附为竖直室内门
+  const onWall = Geometry.snapDoorPosition(258, 160, 80, bigRoom, [vWall], 'h', false);
+  assert.equal(onWall.wall, 'free');
+  assert.equal(onWall.orientation, 'v');
+  assert.equal(onWall.x, 256);
+
+  // 室内空旷处可任意放置
+  const freePos = Geometry.snapDoorPosition(420, 220, 80, bigRoom, [vWall], 'h', false);
+  assert.equal(freePos.wall, 'free');
+  assert.equal(freePos.orientation, 'h');
+  assert.equal(freePos.y, 220);
+
+  // 开在室内隔墙上的门不应被自身隔墙误报阻挡
+  const hostedDoor = { id: 'op-host', type: 'door', name: '隔墙门', wall: 'free', x: 256, y: 120, orientation: 'v', width: 80, swing: 'in', hinge: 'start' };
+  const resHost = Geometry.analyzeLayout(bigRoom, [vWall], [hostedDoor]);
+  assert.ok(!resHost.warnings.some((w) => w.type === 'door_blocked'), '隔墙上的门不应误报被自身隔墙遮挡');
+
+  // 门扇扫掠区内放入家具应准确预警（含 out 外开侧）
+  const chair = { id: 'ch1', name: '餐椅', x: 190, y: 130, w: 50, d: 50, h: 82, rotation: 0 };
+  const outDoor = { ...hostedDoor, swing: 'out' };
+  const resBlocked = Geometry.analyzeLayout(bigRoom, [vWall, chair], [outDoor]);
+  assert.ok(resBlocked.warnings.some((w) => w.type === 'door_blocked'), '自由门扇扫掠区内有家具应准确预警');
+}
+
+console.log('ALL GEOMETRY TESTS PASSED (13/13 groups)');

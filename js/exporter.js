@@ -65,7 +65,7 @@
     ctx.restore();
   }
 
-  function drawOpeningsCanvas(ctx, openings, room, originX, originY, scale, analysis) {
+  function drawOpeningsCanvas(ctx, openings, room, items, originX, originY, scale, analysis) {
     const { Geometry, Renderer } = global.RoomLayout;
     const list = Array.isArray(openings) ? openings : [];
     for (let i = 0; i < list.length; i++) {
@@ -74,15 +74,45 @@
       const v = Renderer.getOpeningVectors(geom, originX, originY, scale);
       const isBlocked = analysis.openingIssues && analysis.openingIssues.has(op.id);
       const stroke = isBlocked ? '#dc2626' : '#0284c7';
+      const isHoriz = Boolean(geom.isHoriz);
+      const hostWall =
+        geom.wall === 'free' && Array.isArray(items)
+          ? items.find((it) => Geometry.isOpeningHostedOnWallItem(geom, it))
+          : null;
 
       ctx.save();
-      // 白底切断墙线
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 7;
-      ctx.beginPath();
-      ctx.moveTo(v.px1, v.py1);
-      ctx.lineTo(v.px2, v.py2);
-      ctx.stroke();
+      // 白底切断墙线（外墙或室内隔墙）
+      let jambHalf = 5;
+      if (geom.wall === 'free') {
+        if (hostWall) {
+          const hfp = Geometry.getFootprint(hostWall);
+          const breakThick = Math.max(7, (isHoriz ? hfp.d : hfp.w) * scale + 2.5);
+          jambHalf = breakThick / 2 + 1.5;
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = breakThick;
+          ctx.beginPath();
+          ctx.moveTo(v.px1, v.py1);
+          ctx.lineTo(v.px2, v.py2);
+          ctx.stroke();
+        } else {
+          jambHalf = 5.5;
+          ctx.strokeStyle = '#94a3b8';
+          ctx.lineWidth = 1.6;
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          ctx.moveTo(v.px1, v.py1);
+          ctx.lineTo(v.px2, v.py2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      } else {
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 7;
+        ctx.beginPath();
+        ctx.moveTo(v.px1, v.py1);
+        ctx.lineTo(v.px2, v.py2);
+        ctx.stroke();
+      }
 
       if (geom.type === 'window') {
         const thick = 7;
@@ -143,16 +173,16 @@
       ctx.strokeStyle = '#1e293b';
       ctx.lineWidth = 2.2;
       ctx.beginPath();
-      if (geom.wall === 'top' || geom.wall === 'bottom') {
-        ctx.moveTo(v.px1, v.py1 - 5);
-        ctx.lineTo(v.px1, v.py1 + 5);
-        ctx.moveTo(v.px2, v.py2 - 5);
-        ctx.lineTo(v.px2, v.py2 + 5);
+      if (isHoriz) {
+        ctx.moveTo(v.px1, v.py1 - jambHalf);
+        ctx.lineTo(v.px1, v.py1 + jambHalf);
+        ctx.moveTo(v.px2, v.py2 - jambHalf);
+        ctx.lineTo(v.px2, v.py2 + jambHalf);
       } else {
-        ctx.moveTo(v.px1 - 5, v.py1);
-        ctx.lineTo(v.px1 + 5, v.py1);
-        ctx.moveTo(v.px2 - 5, v.py2);
-        ctx.lineTo(v.px2 + 5, v.py2);
+        ctx.moveTo(v.px1 - jambHalf, v.py1);
+        ctx.lineTo(v.px1 + jambHalf, v.py1);
+        ctx.moveTo(v.px2 - jambHalf, v.py2);
+        ctx.lineTo(v.px2 + jambHalf, v.py2);
       }
       ctx.stroke();
 
@@ -166,7 +196,10 @@
       const midY = (v.py1 + v.py2) / 2;
       let labelX = midX;
       let labelY = midY;
-      if (geom.wall === 'top') labelY = midY + 15;
+      if (geom.wall === 'free') {
+        if (isHoriz) labelY = midY + (geom.swing === 'out' ? 15 : -15);
+        else labelX = midX + (geom.swing === 'out' ? pillW / 2 + 7 : -(pillW / 2 + 7));
+      } else if (geom.wall === 'top') labelY = midY + 15;
       else if (geom.wall === 'bottom') labelY = midY - 15;
       else if (geom.wall === 'left') labelX = midX + pillW / 2 + 7;
       else labelX = midX - pillW / 2 - 7;
@@ -378,7 +411,16 @@
     ctx.restore();
 
     // 墙边门口
-    drawOpeningsCanvas(ctx, openingList, room, originX, originY, scale, analysis);
+    drawOpeningsCanvas(
+      ctx,
+      openingList.filter((op) => op.wall !== 'free'),
+      room,
+      items,
+      originX,
+      originY,
+      scale,
+      analysis
+    );
 
     // 4. 家具绘制
     for (let i = 0; i < items.length; i++) {
@@ -526,6 +568,18 @@
         ctx.restore();
       }
     }
+
+    // 室内任意位置/隔墙门口
+    drawOpeningsCanvas(
+      ctx,
+      openingList.filter((op) => op.wall === 'free'),
+      room,
+      items,
+      originX,
+      originY,
+      scale,
+      analysis
+    );
 
     // 5. 间距标注 & 自由文字备注
     for (let i = 0; i < analysis.narrowLines.length; i++) {

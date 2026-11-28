@@ -42,15 +42,17 @@
 
   function cloneOpenings(openings) {
     if (!Array.isArray(openings)) return [];
-    const validWalls = { top: true, bottom: true, left: true, right: true };
+    const validWalls = { top: true, bottom: true, left: true, right: true, free: true };
     return openings
       .filter(
         (op) =>
           op &&
           typeof op.id === 'string' &&
           validWalls[op.wall] &&
-          Number.isFinite(op.offset) &&
-          Number.isFinite(op.width)
+          Number.isFinite(op.width) &&
+          (op.wall === 'free'
+            ? Number.isFinite(op.x) && Number.isFinite(op.y)
+            : Number.isFinite(op.offset))
       )
       .map((op) => {
         const type = op.type === 'window' ? 'window' : 'door';
@@ -63,18 +65,24 @@
         const openH = Number.isFinite(Number(op.openH))
           ? Math.max(30, Math.min(400, Math.round(Number(op.openH))))
           : openHDefault;
-        return {
+        const base = {
           id: op.id,
           type,
           name: typeof op.name === 'string' && op.name.trim() ? op.name.trim() : defaultName,
           wall: op.wall,
-          offset: Math.round(op.offset),
+          offset: op.wall === 'free' ? 0 : Math.round(op.offset),
           width: Math.max(30, Math.min(400, Math.round(op.width))),
           swing: type === 'window' ? 'none' : op.swing === 'out' || op.swing === 'none' ? op.swing : 'in',
           hinge: op.hinge === 'end' ? 'end' : 'start',
           sillH,
           openH
         };
+        if (op.wall === 'free') {
+          base.x = Math.round(op.x);
+          base.y = Math.round(op.y);
+          base.orientation = op.orientation === 'v' ? 'v' : 'h';
+        }
+        return base;
       });
   }
 

@@ -167,7 +167,7 @@
         const iy = (40 - ih) / 2;
         const sizeText =
           item.kind === 'opening'
-            ? `${item.w}cm 门洞`
+            ? `${item.w}cm 任意可放`
             : item.kind === 'window'
             ? `${item.w}cm 窗户`
             : item.kind === 'note'
@@ -266,6 +266,7 @@
 
         openBar.hidden = false;
         const isWindow = op.type === 'window';
+        dom.openActRotate.hidden = isWindow;
         dom.openActFlip.hidden = isWindow;
         dom.openActEdit.textContent = isWindow ? '改尺寸/高度' : '改尺寸/朝向';
         const bw = openBar.offsetWidth || 210;
@@ -437,18 +438,24 @@
     const type = openingType === 'window' ? 'window' : 'door';
     const width = widthCm || (type === 'window' ? 150 : 80);
     const target = pos || Geometry.findSmartOpeningPosition(width, state.room, state.openings);
+    const isFree = type !== 'window' && target.wall === 'free';
     const opening = {
       id: nextId('open'),
       type,
       name: type === 'window' ? '窗户' : '门口',
-      wall: target.wall,
-      offset: Math.round(target.offset),
+      wall: isFree ? 'free' : target.wall,
+      offset: isFree ? 0 : Math.round(target.offset),
       width: Math.round(width),
       swing: type === 'window' ? 'none' : 'in',
       hinge: 'start',
       sillH: type === 'window' ? 90 : 0,
       openH: type === 'window' ? 140 : 210
     };
+    if (isFree) {
+      opening.x = Math.round(target.x);
+      opening.y = Math.round(target.y);
+      opening.orientation = target.orientation === 'v' ? 'v' : 'h';
+    }
     state.openings.push(opening);
     clearAllSelections();
     state.selectedOpeningId = opening.id;
@@ -530,6 +537,29 @@
     } else {
       op.swing = 'in';
       op.hinge = op.hinge === 'start' ? 'end' : 'start';
+    }
+    syncDraftAndPersist(true);
+    refreshCanvas();
+  }
+
+  function rotateSelectedOpening() {
+    if (!state.selectedOpeningId) return;
+    const op = state.openings.find((o) => o.id === state.selectedOpeningId);
+    if (!op || op.type === 'window') return;
+    const { Geometry } = global.RoomLayout;
+    const geom = Geometry.getOpeningGeometry(op, state.room);
+    const nextOrient = geom.isHoriz ? 'v' : 'h';
+    op.wall = 'free';
+    op.orientation = nextOrient;
+    op.offset = 0;
+    if (nextOrient === 'h') {
+      const clampedW = Math.min(op.width, state.room.w);
+      op.x = clamp(Math.round(geom.cx - clampedW / 2), 0, Math.max(0, state.room.w - clampedW));
+      op.y = clamp(Math.round(geom.cy), 0, state.room.d);
+    } else {
+      const clampedW = Math.min(op.width, state.room.d);
+      op.x = clamp(Math.round(geom.cx), 0, state.room.w);
+      op.y = clamp(Math.round(geom.cy - clampedW / 2), 0, Math.max(0, state.room.d - clampedW));
     }
     syncDraftAndPersist(true);
     refreshCanvas();
@@ -625,12 +655,16 @@
 
     dom.doorSwingField.hidden = isWindow;
     dom.doorHingeField.hidden = isWindow;
+    const freeOpt = dom.openEditWall.querySelector('option[value="free"]');
+    if (freeOpt) freeOpt.hidden = isWindow;
+    dom.doorOrientField.hidden = isWindow || op.wall !== 'free';
     dom.winSillField.hidden = !isWindow;
     dom.winHeightField.hidden = !isWindow;
 
     dom.openEditName.value = op.name || (isWindow ? '窗户' : '门口');
     dom.openEditWidth.value = op.width;
     dom.openEditWall.value = op.wall;
+    dom.openEditOrient.value = op.orientation === 'v' ? 'v' : 'h';
     dom.openEditSwing.value = op.swing || 'in';
     dom.openEditHinge.value = op.hinge || 'start';
     dom.openEditSill.value = Number.isFinite(op.sillH) ? op.sillH : 90;
@@ -660,7 +694,8 @@
       op.width = shouldClamp ? clamp(Math.round(widthRaw), 30, 400) : Math.round(widthRaw);
     }
 
-    op.wall = dom.openEditWall.value;
+    const prevGeom = global.RoomLayout.Geometry.getOpeningGeometry(op, state.room);
+    op.wall = isWindow && dom.openEditWall.value === 'free' ? 'top' : dom.openEditWall.value;
     if (isWindow) {
       op.swing = 'none';
       const sillRaw = Number(dom.openEditSill.value);
@@ -680,8 +715,33 @@
       op.hinge = dom.openEditHinge.value;
     }
 
-    const wallLen = op.wall === 'top' || op.wall === 'bottom' ? state.room.w : state.room.d;
-    op.offset = clamp(op.offset, 0, Math.max(0, wallLen - Math.min(op.width, wallLen)));
+    dom.doorOrientField.hidden = isWindow || op.wall !== 'free';
+    if (op.wall === 'free') {
+      const nextOrient =
+        prevGeom.wall !== 'free'
+          ? prevGeom.isHoriz
+            ? 'h'
+            : 'v'
+          : dom.openEditOrient.value === 'v'
+          ? 'v'
+          : 'h';
+      op.orientation = nextOrient;
+      dom.openEditOrient.value = nextOrient;
+      op.offset = 0;
+      if (nextOrient === 'h') {
+        const cw = Math.min(op.width, state.room.w);
+        op.x = clamp(Math.round(Number.isFinite(op.x) ? prevGeom.cx - cw / 2 : prevGeom.cx - cw / 2), 0, Math.max(0, state.room.w - cw));
+        op.y = clamp(Math.round(Number.isFinite(op.y) ? op.y : prevGeom.cy), 0, state.room.d);
+      } else {
+        const cw = Math.min(op.width, state.room.d);
+        op.x = clamp(Math.round(Number.isFinite(op.x) ? op.x : prevGeom.cx), 0, state.room.w);
+        op.y = clamp(Math.round(Number.isFinite(op.y) ? prevGeom.cy - cw / 2 : prevGeom.cy - cw / 2), 0, Math.max(0, state.room.d - cw));
+      }
+    } else {
+      const wallLen = op.wall === 'top' || op.wall === 'bottom' ? state.room.w : state.room.d;
+      const baseOff = prevGeom.wall === 'free' ? (op.wall === 'top' || op.wall === 'bottom' ? prevGeom.x1 : prevGeom.y1) : op.offset;
+      op.offset = clamp(baseOff, 0, Math.max(0, wallLen - Math.min(op.width, wallLen)));
+    }
 
     if (shouldClamp) {
       dom.openEditWidth.value = op.width;
@@ -887,7 +947,7 @@
         ghost.style.height = `${gd}px`;
         const sizeLabel =
           dragSession.cat.kind === 'opening'
-            ? `${dragSession.cat.w}cm 门洞`
+            ? `${dragSession.cat.w}cm 任意可放`
             : dragSession.cat.kind === 'window'
             ? `${dragSession.cat.w}cm 窗户`
             : dragSession.cat.kind === 'note'
@@ -928,9 +988,22 @@
         e.clientY <= stageRect.bottom
       ) {
         const cmPos = clientToRoomCm(e.clientX, e.clientY);
-        if (session.cat.kind === 'opening' || session.cat.kind === 'window') {
+        if (session.cat.kind === 'opening') {
+          const snappedDoor = Geometry.snapDoorPosition(
+            cmPos.x,
+            cmPos.y,
+            session.cat.w,
+            state.room,
+            state.items,
+            'h',
+            e.shiftKey
+          );
+          addOpening(snappedDoor, session.cat.w, 'door');
+          return;
+        }
+        if (session.cat.kind === 'window') {
           const snappedWall = Geometry.snapOpeningToWall(cmPos.x, cmPos.y, session.cat.w, state.room, e.shiftKey);
-          addOpening(snappedWall, session.cat.w, session.cat.kind === 'window' ? 'window' : 'door');
+          addOpening(snappedWall, session.cat.w, 'window');
           return;
         }
         if (session.cat.kind === 'note') {
@@ -1015,7 +1088,7 @@
         openingResizeDrag = {
           id: opId,
           end,
-          startOffset: op.offset,
+          startOffset: op.wall === 'free' ? (op.orientation === 'v' ? op.y : op.x) : op.offset,
           startWidth: op.width,
           moved: false
         };
@@ -1240,26 +1313,36 @@
           const op = state.openings.find((o) => o.id === openingResizeDrag.id);
           if (!op) return;
           const cmPos = clientToRoomCm(evt.clientX, evt.clientY);
-          const isHoriz = op.wall === 'top' || op.wall === 'bottom';
+          const isHoriz = op.wall === 'free' ? op.orientation !== 'v' : op.wall === 'top' || op.wall === 'bottom';
           const wallLen = isHoriz ? state.room.w : state.room.d;
           const rawCoord = isHoriz ? cmPos.x : cmPos.y;
           const coord = evt.shiftKey ? Math.round(rawCoord) : Math.round(rawCoord / 5) * 5;
           const fixedEnd = openingResizeDrag.startOffset + openingResizeDrag.startWidth;
           const fixedStart = openingResizeDrag.startOffset;
 
-          let nextOffset = op.offset;
+          let nextStart = openingResizeDrag.startOffset;
           let nextWidth = op.width;
           if (openingResizeDrag.end === 'start') {
-            nextOffset = clamp(coord, 0, fixedEnd - 30);
-            nextWidth = clamp(fixedEnd - nextOffset, 30, Math.min(400, wallLen));
+            nextStart = clamp(coord, 0, fixedEnd - 30);
+            nextWidth = clamp(fixedEnd - nextStart, 30, Math.min(400, wallLen));
           } else {
             const endCoord = clamp(coord, fixedStart + 30, wallLen);
-            nextOffset = fixedStart;
+            nextStart = fixedStart;
             nextWidth = clamp(endCoord - fixedStart, 30, Math.min(400, wallLen - fixedStart));
           }
-          if (op.offset !== nextOffset || op.width !== nextWidth) {
+
+          if (op.wall === 'free') {
+            const prevStart = isHoriz ? op.x : op.y;
+            if (prevStart !== Math.round(nextStart) || op.width !== Math.round(nextWidth)) {
+              openingResizeDrag.moved = true;
+              if (isHoriz) op.x = Math.round(nextStart);
+              else op.y = Math.round(nextStart);
+              op.width = Math.round(nextWidth);
+              refreshCanvas();
+            }
+          } else if (op.offset !== Math.round(nextStart) || op.width !== Math.round(nextWidth)) {
             openingResizeDrag.moved = true;
-            op.offset = Math.round(nextOffset);
+            op.offset = Math.round(nextStart);
             op.width = Math.round(nextWidth);
             refreshCanvas();
           }
@@ -1290,11 +1373,36 @@
             openingDrag.moved = true;
           }
           const cmPos = clientToRoomCm(evt.clientX, evt.clientY);
-          const next = Geometry.snapOpeningToWall(cmPos.x, cmPos.y, op.width, state.room, evt.shiftKey);
-          if (op.wall !== next.wall || op.offset !== next.offset) {
-            op.wall = next.wall;
-            op.offset = next.offset;
-            refreshCanvas();
+          if (op.type === 'window') {
+            const next = Geometry.snapOpeningToWall(cmPos.x, cmPos.y, op.width, state.room, evt.shiftKey);
+            if (op.wall !== next.wall || op.offset !== next.offset) {
+              op.wall = next.wall;
+              op.offset = next.offset;
+              refreshCanvas();
+            }
+          } else {
+            const curOrient = op.orientation || (op.wall === 'left' || op.wall === 'right' ? 'v' : 'h');
+            const next = Geometry.snapDoorPosition(cmPos.x, cmPos.y, op.width, state.room, state.items, curOrient, evt.shiftKey);
+            const changed =
+              op.wall !== next.wall ||
+              op.offset !== next.offset ||
+              op.x !== next.x ||
+              op.y !== next.y ||
+              op.orientation !== next.orientation;
+            if (changed) {
+              op.wall = next.wall;
+              op.offset = next.offset;
+              if (next.wall === 'free') {
+                op.x = next.x;
+                op.y = next.y;
+                op.orientation = next.orientation;
+              } else {
+                delete op.x;
+                delete op.y;
+                op.orientation = next.orientation;
+              }
+              refreshCanvas();
+            }
           }
           return;
         }
@@ -1757,6 +1865,7 @@
     dom.btnDelete.addEventListener('click', deleteSelected);
 
     // 门口浮动工具条
+    dom.openActRotate.addEventListener('click', rotateSelectedOpening);
     dom.openActFlip.addEventListener('click', flipSelectedOpening);
     dom.openActEdit.addEventListener('click', () => {
       if (state.selectedOpeningId) openOpeningModal(state.selectedOpeningId);
@@ -1859,7 +1968,7 @@
       input.addEventListener('input', () => applyOpeningInputs(false));
       input.addEventListener('change', () => applyOpeningInputs(true));
     });
-    [dom.openEditWall, dom.openEditSwing, dom.openEditHinge].forEach((sel) => {
+    [dom.openEditWall, dom.openEditOrient, dom.openEditSwing, dom.openEditHinge].forEach((sel) => {
       sel.addEventListener('change', () => applyOpeningInputs(true));
     });
 
@@ -1932,6 +2041,31 @@
         return;
       }
 
+      if (state.selectedOpeningId) {
+        if (e.key === 'r' || e.key === 'R') {
+          e.preventDefault();
+          rotateSelectedOpening();
+          return;
+        }
+        if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+          const op = state.openings.find((o) => o.id === state.selectedOpeningId);
+          if (op && op.wall === 'free') {
+            e.preventDefault();
+            const step = e.shiftKey ? 10 : 2;
+            const isHoriz = op.orientation !== 'v';
+            const maxX = isHoriz ? Math.max(0, state.room.w - op.width) : state.room.w;
+            const maxY = isHoriz ? state.room.d : Math.max(0, state.room.d - op.width);
+            if (e.key === 'ArrowLeft') op.x = clamp((op.x || 0) - step, 0, maxX);
+            if (e.key === 'ArrowRight') op.x = clamp((op.x || 0) + step, 0, maxX);
+            if (e.key === 'ArrowUp') op.y = clamp((op.y || 0) - step, 0, maxY);
+            if (e.key === 'ArrowDown') op.y = clamp((op.y || 0) + step, 0, maxY);
+            syncDraftAndPersist(true);
+            refreshCanvas();
+            return;
+          }
+        }
+      }
+
       if (!state.selectedId) return;
 
       if (e.key === 'r' || e.key === 'R') {
@@ -2000,6 +2134,7 @@
       btnDuplicate: document.getElementById('act-duplicate'),
       btnDelete: document.getElementById('act-delete'),
       floatingOpeningBar: document.getElementById('floating-opening-bar'),
+      openActRotate: document.getElementById('open-act-rotate'),
       openActFlip: document.getElementById('open-act-flip'),
       openActEdit: document.getElementById('open-act-edit'),
       openActDelete: document.getElementById('open-act-delete'),
@@ -2025,6 +2160,7 @@
       openingWidthLabel: document.getElementById('opening-width-label'),
       doorSwingField: document.getElementById('door-swing-field'),
       doorHingeField: document.getElementById('door-hinge-field'),
+      doorOrientField: document.getElementById('door-orient-field'),
       winSillField: document.getElementById('win-sill-field'),
       winHeightField: document.getElementById('win-height-field'),
       openingModalClose: document.getElementById('opening-modal-close'),
@@ -2033,6 +2169,7 @@
       openEditName: document.getElementById('open-edit-name'),
       openEditWidth: document.getElementById('open-edit-width'),
       openEditWall: document.getElementById('open-edit-wall'),
+      openEditOrient: document.getElementById('open-edit-orient'),
       openEditSwing: document.getElementById('open-edit-swing'),
       openEditHinge: document.getElementById('open-edit-hinge'),
       openEditSill: document.getElementById('open-edit-sill'),

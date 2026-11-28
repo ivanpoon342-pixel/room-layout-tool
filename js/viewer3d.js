@@ -198,7 +198,7 @@
   /**
    * 为每件家具生成精细的 3D 白模子盒子集合
    */
-  function buildItemPrimitives(item, analysis) {
+  function buildItemPrimitives(item, analysis, openings, room) {
     const { Geometry } = global.RoomLayout;
     const fp = Geometry.getFootprint(item);
     const rotRad = ((((item.rotation || 0) % 360) + 360) % 360) * (Math.PI / 180);
@@ -236,18 +236,64 @@
     } else if (item.catalogId === 'partition-screen') {
       boxes.push(buildOrientedBoxFaces(fp.cx, fp.cy, rotRad, 0, 0, 0, w, d, h, c, hasSevere ? 0.72 : 0.48));
     } else if (item.catalogId === 'interior-wall') {
-      const segCount = Math.max(1, Math.ceil(Math.max(w, d) / 80));
-      if (w >= d) {
-        const segW = w / segCount;
-        for (let i = 0; i < segCount; i++) {
-          const localCx = -w / 2 + (i + 0.5) * segW;
-          boxes.push(buildOrientedBoxFaces(fp.cx, fp.cy, rotRad, localCx, 0, 0, segW, d, h, c, 1));
+      const openingList = Array.isArray(openings) ? openings : [];
+      const hostedOps =
+        room && openingList.length > 0
+          ? openingList
+              .map((op) => ({ op, geom: Geometry.getOpeningGeometry(op, room) }))
+              .filter(({ geom }) => Geometry.isOpeningHostedOnWallItem(geom, item))
+          : [];
+
+      if (hostedOps.length > 0) {
+        const wHoriz = fp.w >= fp.d;
+        const wallLen = wHoriz ? fp.w : fp.d;
+        const wallThick = wHoriz ? fp.d : fp.w;
+        const spans = hostedOps
+          .map(({ geom }) => {
+            const t0 = clamp((wHoriz ? geom.x1 - fp.x : geom.y1 - fp.y), 0, wallLen);
+            const t1 = clamp((wHoriz ? geom.x2 - fp.x : geom.y2 - fp.y), 0, wallLen);
+            const doorH = Math.min(geom.openH || 210, h);
+            return { t0: Math.min(t0, t1), t1: Math.max(t0, t1), doorH };
+          })
+          .filter((s) => s.t1 - s.t0 >= 1)
+          .sort((a, b) => a.t0 - b.t0);
+
+        const pushWallSpan = (a, b, z0, bh) => {
+          if (b - a < 0.5 || bh < 0.5) return;
+          const cnt = Math.max(1, Math.ceil((b - a) / 80));
+          const step = (b - a) / cnt;
+          for (let i = 0; i < cnt; i++) {
+            const mid = a + (i + 0.5) * step;
+            const cx = wHoriz ? fp.x + mid : fp.cx;
+            const cy = wHoriz ? fp.cy : fp.y + mid;
+            const bw = wHoriz ? step : wallThick;
+            const bd = wHoriz ? wallThick : step;
+            boxes.push(buildOrientedBoxFaces(cx, cy, 0, 0, 0, z0, bw, bd, bh, c, 1));
+          }
+        };
+
+        let cursor = 0;
+        for (let si = 0; si < spans.length; si++) {
+          const sp = spans[si];
+          if (sp.t0 > cursor) pushWallSpan(cursor, sp.t0, 0, h);
+          if (h > sp.doorH + 0.5) pushWallSpan(sp.t0, sp.t1, sp.doorH, h - sp.doorH);
+          cursor = Math.max(cursor, sp.t1);
         }
+        if (cursor < wallLen) pushWallSpan(cursor, wallLen, 0, h);
       } else {
-        const segD = d / segCount;
-        for (let i = 0; i < segCount; i++) {
-          const localCy = -d / 2 + (i + 0.5) * segD;
-          boxes.push(buildOrientedBoxFaces(fp.cx, fp.cy, rotRad, 0, localCy, 0, w, segD, h, c, 1));
+        const segCount = Math.max(1, Math.ceil(Math.max(w, d) / 80));
+        if (w >= d) {
+          const segW = w / segCount;
+          for (let i = 0; i < segCount; i++) {
+            const localCx = -w / 2 + (i + 0.5) * segW;
+            boxes.push(buildOrientedBoxFaces(fp.cx, fp.cy, rotRad, localCx, 0, 0, segW, d, h, c, 1));
+          }
+        } else {
+          const segD = d / segCount;
+          for (let i = 0; i < segCount; i++) {
+            const localCy = -d / 2 + (i + 0.5) * segD;
+            boxes.push(buildOrientedBoxFaces(fp.cx, fp.cy, rotRad, 0, localCy, 0, w, segD, h, c, 1));
+          }
         }
       }
     } else if (item.catalogId === 'stairs-straight') {
@@ -331,6 +377,42 @@
       labelWorld: [fp.cx, fp.cy, h + 12],
       name: item.name,
       hasSevere
+    };
+  }
+
+  function getFreeDoor3DData(op, room, analysis) {
+    const { Geometry } = global.RoomLayout;
+    const geom = Geometry.getOpeningGeometry(op, room);
+    const doorH = Math.min(geom.openH || 210, room.h);
+    const isBlocked = analysis && analysis.openingIssues && analysis.openingIssues.has(op.id);
+    const stroke = isBlocked ? '#dc2626' : '#0284c7';
+
+    let leafVerts = null;
+    if (geom.swing !== 'none') {
+      let nx = 0;
+      let ny = 0;
+      if (geom.isHoriz) ny = geom.swing === 'out' ? -1 : 1;
+      else nx = geom.swing === 'out' ? -1 : 1;
+      const tx = geom.hingeX + nx * geom.width;
+      const ty = geom.hingeY + ny * geom.width;
+      leafVerts = [
+        [geom.hingeX, geom.hingeY, 0],
+        [tx, ty, 0],
+        [tx, ty, doorH],
+        [geom.hingeX, geom.hingeY, doorH]
+      ];
+    }
+
+    return {
+      geom,
+      doorH,
+      isBlocked,
+      stroke,
+      fill: isBlocked ? 'rgba(239, 68, 68, 0.25)' : 'rgba(14, 165, 233, 0.18)',
+      jamb1: [[geom.x1, geom.y1, 0], [geom.x1, geom.y1, doorH]],
+      jamb2: [[geom.x2, geom.y2, 0], [geom.x2, geom.y2, doorH]],
+      header: [[geom.x1, geom.y1, doorH], [geom.x2, geom.y2, doorH]],
+      leafVerts
     };
   }
 
@@ -544,7 +626,7 @@
     const labelSpecs = [];
 
     for (let i = 0; i < items.length; i++) {
-      const built = buildItemPrimitives(items[i], analysis);
+      const built = buildItemPrimitives(items[i], analysis, openings, room);
       labelSpecs.push(built);
       for (let b = 0; b < built.boxes.length; b++) {
         const box = built.boxes[b];
@@ -556,6 +638,34 @@
     allPrimitives.sort((a, b) => b.dist - a.dist);
     for (let i = 0; i < allPrimitives.length; i++) {
       renderBoxPrimitive(ctx, allPrimitives[i].box, proj);
+    }
+
+    // 绘制室内任意位置/隔墙门口（门框立柱、过梁与半透明门扇）
+    const openingList = Array.isArray(openings) ? openings : [];
+    for (let i = 0; i < openingList.length; i++) {
+      const op = openingList[i];
+      if (op.wall !== 'free') continue;
+      const fd = getFreeDoor3DData(op, room, analysis);
+      const j1a = proj.project(...fd.jamb1[0]);
+      const j1b = proj.project(...fd.jamb1[1]);
+      const j2a = proj.project(...fd.jamb2[0]);
+      const j2b = proj.project(...fd.jamb2[1]);
+      ctx.save();
+      ctx.strokeStyle = fd.stroke;
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(j1a.sx, j1a.sy);
+      ctx.lineTo(j1b.sx, j1b.sy);
+      ctx.moveTo(j2a.sx, j2a.sy);
+      ctx.lineTo(j2b.sx, j2b.sy);
+      ctx.moveTo(j1b.sx, j1b.sy);
+      ctx.lineTo(j2b.sx, j2b.sy);
+      ctx.stroke();
+      ctx.restore();
+      if (fd.leafVerts) {
+        const pts = fd.leafVerts.map((v) => proj.project(v[0], v[1], v[2]));
+        fillQuad(ctx, pts, fd.fill, fd.stroke, 1.4, 1);
+      }
     }
 
     wallDrawer.drawFrontWalls();
@@ -718,6 +828,7 @@
     clamp,
     createCamera,
     buildItemPrimitives,
+    getFreeDoor3DData,
     renderToElement,
     export3DPng
   };

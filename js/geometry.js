@@ -357,13 +357,10 @@
   }
 
   /**
-   * 墙边门口/窗户几何计算：返回在房间边缘的起止坐标、窗台/洞口高度及内开扫掠区矩形
+   * 墙边或室内任意位置门口/窗户几何计算：返回起止坐标、窗台/洞口高度及开启扫掠区矩形
    */
   function getOpeningGeometry(opening, room) {
     const type = opening.type === 'window' ? 'window' : 'door';
-    const wallLen = opening.wall === 'top' || opening.wall === 'bottom' ? room.w : room.d;
-    const width = Math.max(30, Math.min(opening.width || (type === 'window' ? 150 : 80), wallLen));
-    const offset = Math.max(0, Math.min(opening.offset || 0, wallLen - width));
     const swing = type === 'window' ? 'none' : opening.swing === 'out' || opening.swing === 'none' ? opening.swing : 'in';
     const hinge = opening.hinge === 'end' ? 'end' : 'start';
 
@@ -375,6 +372,67 @@
       ? Math.max(30, Math.round(Number(opening.openH)))
       : type === 'window' ? 140 : 210;
     const openH = Math.min(rawOpenH, Math.max(30, room.h - sillH));
+
+    if (opening.wall === 'free') {
+      const orientation = opening.orientation === 'v' ? 'v' : 'h';
+      const isHoriz = orientation === 'h';
+      const spanLimit = isHoriz ? room.w : room.d;
+      const width = Math.max(30, Math.min(opening.width || 80, spanLimit));
+      const rawX = Number.isFinite(Number(opening.x)) ? Number(opening.x) : Math.round((room.w - width) / 2);
+      const rawY = Number.isFinite(Number(opening.y)) ? Number(opening.y) : Math.round(room.d / 2);
+
+      const x1 = isHoriz
+        ? Math.max(0, Math.min(room.w - width, Math.round(rawX)))
+        : Math.max(0, Math.min(room.w, Math.round(rawX)));
+      const y1 = isHoriz
+        ? Math.max(0, Math.min(room.d, Math.round(rawY)))
+        : Math.max(0, Math.min(room.d - width, Math.round(rawY)));
+      const x2 = isHoriz ? x1 + width : x1;
+      const y2 = isHoriz ? y1 : y1 + width;
+      const hingeX = hinge === 'start' ? x1 : x2;
+      const hingeY = hinge === 'start' ? y1 : y2;
+
+      let swingBox = null;
+      if (swing === 'in') {
+        swingBox = isHoriz
+          ? { x: x1, y: y1, w: width, d: width, right: x2, bottom: y1 + width }
+          : { x: x1, y: y1, w: width, d: width, right: x1 + width, bottom: y2 };
+      } else if (swing === 'out') {
+        swingBox = isHoriz
+          ? { x: x1, y: y1 - width, w: width, d: width, right: x2, bottom: y1 }
+          : { x: x1 - width, y: y1, w: width, d: width, right: x1, bottom: y2 };
+      }
+
+      return {
+        type,
+        wall: 'free',
+        orientation,
+        isFree: true,
+        isHoriz,
+        offset: isHoriz ? x1 : y1,
+        width,
+        swing,
+        hinge,
+        sillH,
+        openH,
+        topH: sillH + openH,
+        x1,
+        y1,
+        x2,
+        y2,
+        cx: (x1 + x2) / 2,
+        cy: (y1 + y2) / 2,
+        hingeX,
+        hingeY,
+        swingBox
+      };
+    }
+
+    const wallLen = opening.wall === 'top' || opening.wall === 'bottom' ? room.w : room.d;
+    const width = Math.max(30, Math.min(opening.width || (type === 'window' ? 150 : 80), wallLen));
+    const offset = Math.max(0, Math.min(opening.offset || 0, wallLen - width));
+    const isHoriz = opening.wall === 'top' || opening.wall === 'bottom';
+    const orientation = isHoriz ? 'h' : 'v';
 
     let x1 = 0;
     let y1 = 0;
@@ -429,6 +487,9 @@
     return {
       type,
       wall: opening.wall,
+      orientation,
+      isFree: false,
+      isHoriz,
       offset,
       width,
       swing,
@@ -446,6 +507,23 @@
       hingeY,
       swingBox
     };
+  }
+
+  /**
+   * 判断自由门口是否贴合开在某道室内隔墙/屏风隔断上
+   */
+  function isOpeningHostedOnWallItem(geom, item) {
+    if (!geom || geom.wall !== 'free' || !item) return false;
+    if (item.catalogId !== 'interior-wall' && item.catalogId !== 'partition-screen') return false;
+    const fp = getFootprint(item);
+    const wHoriz = fp.w >= fp.d;
+    if (geom.isHoriz !== wHoriz) return false;
+    if (geom.isHoriz) {
+      const overlap = Math.min(geom.x2, fp.right) - Math.max(geom.x1, fp.x);
+      return Math.abs(geom.y1 - fp.cy) <= fp.d / 2 + 6 && overlap >= Math.min(geom.width * 0.5, 20);
+    }
+    const overlap = Math.min(geom.y2, fp.bottom) - Math.max(geom.y1, fp.y);
+    return Math.abs(geom.x1 - fp.cx) <= fp.w / 2 + 6 && overlap >= Math.min(geom.width * 0.5, 20);
   }
 
   /**
@@ -475,6 +553,96 @@
 
     offset = Math.max(0, Math.min(Math.round(wallLen - clampedW), Math.round(offset)));
     return { wall, offset };
+  }
+
+  /**
+   * 任意位置门口吸附定位：优先吸附房间外墙 -> 吸附室内隔墙/屏风 -> 室内任意坐标放置
+   */
+  function snapDoorPosition(cmX, cmY, width, room, items, currentOrientation, disableSnap) {
+    if (!disableSnap) {
+      const outerDists = [
+        { wall: 'top', dist: Math.abs(cmY) },
+        { wall: 'bottom', dist: Math.abs(room.d - cmY) },
+        { wall: 'left', dist: Math.abs(cmX) },
+        { wall: 'right', dist: Math.abs(room.w - cmX) }
+      ];
+      outerDists.sort((a, b) => a.dist - b.dist);
+      if (outerDists[0].dist <= 16) {
+        const outer = snapOpeningToWall(cmX, cmY, width, room, false);
+        return {
+          wall: outer.wall,
+          offset: outer.offset,
+          orientation: outer.wall === 'top' || outer.wall === 'bottom' ? 'h' : 'v'
+        };
+      }
+
+      const wallItems = Array.isArray(items)
+        ? items.filter((it) => it.catalogId === 'interior-wall' || it.catalogId === 'partition-screen')
+        : [];
+      let bestWallMatch = null;
+      for (let i = 0; i < wallItems.length; i++) {
+        const fp = getFootprint(wallItems[i]);
+        const wHoriz = fp.w >= fp.d;
+        const perpDist = wHoriz ? Math.abs(cmY - fp.cy) : Math.abs(cmX - fp.cx);
+        const maxPerp = (wHoriz ? fp.d : fp.w) / 2 + 18;
+        const inSpan = wHoriz
+          ? cmX >= fp.x - 12 && cmX <= fp.right + 12
+          : cmY >= fp.y - 12 && cmY <= fp.bottom + 12;
+        if (inSpan && perpDist <= maxPerp) {
+          if (!bestWallMatch || perpDist < bestWallMatch.perpDist) {
+            bestWallMatch = { fp, wHoriz, perpDist };
+          }
+        }
+      }
+
+      if (bestWallMatch) {
+        const { fp, wHoriz } = bestWallMatch;
+        if (wHoriz) {
+          const clampedW = Math.min(width, room.w);
+          const minX = fp.w >= clampedW ? Math.max(0, fp.x) : 0;
+          const maxX = fp.w >= clampedW ? Math.min(room.w - clampedW, fp.right - clampedW) : Math.max(0, room.w - clampedW);
+          let x = Math.round((cmX - clampedW / 2) / 5) * 5;
+          if (Math.abs(x - minX) <= SNAP_THRESHOLD_CM) x = minX;
+          else if (Math.abs(maxX - x) <= SNAP_THRESHOLD_CM) x = maxX;
+          x = Math.max(minX, Math.min(maxX, x));
+          return {
+            wall: 'free',
+            x: Math.round(x),
+            y: Math.round(Math.max(0, Math.min(room.d, fp.cy))),
+            orientation: 'h',
+            offset: 0
+          };
+        }
+        const clampedW = Math.min(width, room.d);
+        const minY = fp.d >= clampedW ? Math.max(0, fp.y) : 0;
+        const maxY = fp.d >= clampedW ? Math.min(room.d - clampedW, fp.bottom - clampedW) : Math.max(0, room.d - clampedW);
+        let y = Math.round((cmY - clampedW / 2) / 5) * 5;
+        if (Math.abs(y - minY) <= SNAP_THRESHOLD_CM) y = minY;
+        else if (Math.abs(maxY - y) <= SNAP_THRESHOLD_CM) y = maxY;
+        y = Math.max(minY, Math.min(maxY, y));
+        return {
+          wall: 'free',
+          x: Math.round(Math.max(0, Math.min(room.w, fp.cx))),
+          y: Math.round(y),
+          orientation: 'v',
+          offset: 0
+        };
+      }
+    }
+
+    const orientation = currentOrientation === 'v' ? 'v' : 'h';
+    const isHoriz = orientation === 'h';
+    const clampedW = Math.min(width, isHoriz ? room.w : room.d);
+    const snapVal = (v) => (disableSnap ? Math.round(v) : Math.round(v / 5) * 5);
+
+    if (isHoriz) {
+      const x = Math.max(0, Math.min(Math.max(0, room.w - clampedW), snapVal(cmX - clampedW / 2)));
+      const y = Math.max(0, Math.min(room.d, snapVal(cmY)));
+      return { wall: 'free', x: Math.round(x), y: Math.round(y), orientation: 'h', offset: 0 };
+    }
+    const x = Math.max(0, Math.min(room.w, snapVal(cmX)));
+    const y = Math.max(0, Math.min(Math.max(0, room.d - clampedW), snapVal(cmY - clampedW / 2)));
+    return { wall: 'free', x: Math.round(x), y: Math.round(y), orientation: 'v', offset: 0 };
   }
 
   /**
@@ -652,13 +820,15 @@
       }
     }
 
-    // 5. 墙边内开门口开启扇区碰撞检测
+    // 5. 门口开启扇区碰撞检测（外墙仅测内开；室内任意门口测内/外开，且自动排除其所在的隔墙本身）
     for (let i = 0; i < openingList.length; i++) {
       const op = openingList[i];
       const geom = getOpeningGeometry(op, room);
-      if (geom.swing !== 'in') continue;
+      if (geom.wall !== 'free' && geom.swing !== 'in') continue;
+      if (geom.wall === 'free' && geom.swing === 'none') continue;
       for (let j = 0; j < items.length; j++) {
         const it = items[j];
+        if (isOpeningHostedOnWallItem(geom, it)) continue;
         const fp = getFootprint(it);
         if (doesOpeningSwingHitItem(geom, fp)) {
           if (!openingIssues.has(op.id)) openingIssues.set(op.id, new Set());
@@ -741,7 +911,9 @@
     resizeFromHandle,
     measureClearances,
     getOpeningGeometry,
+    isOpeningHostedOnWallItem,
     snapOpeningToWall,
+    snapDoorPosition,
     doesOpeningSwingHitItem,
     findSmartOpeningPosition,
     analyzeLayout,

@@ -198,7 +198,10 @@
     // 指向室内/室外的法线单位向量
     let nx = 0;
     let ny = 0;
-    if (geom.wall === 'top') ny = geom.swing === 'out' ? -1 : 1;
+    if (geom.wall === 'free') {
+      if (geom.isHoriz) ny = geom.swing === 'out' ? -1 : 1;
+      else nx = geom.swing === 'out' ? -1 : 1;
+    } else if (geom.wall === 'top') ny = geom.swing === 'out' ? -1 : 1;
     else if (geom.wall === 'bottom') ny = geom.swing === 'out' ? 1 : -1;
     else if (geom.wall === 'left') nx = geom.swing === 'out' ? -1 : 1;
     else nx = geom.swing === 'out' ? 1 : -1;
@@ -211,7 +214,7 @@
     return { px1, py1, px2, py2, r, hx, hy, jx, jy, tx, ty, nx, ny, sweepFlag, cross };
   }
 
-  function renderOpeningItem(op, room, metrics, state, analysis) {
+  function renderOpeningItem(op, room, items, metrics, state, analysis) {
     const { Geometry } = global.RoomLayout;
     const { originX, originY, scale } = metrics;
     const geom = Geometry.getOpeningGeometry(op, room);
@@ -223,13 +226,33 @@
     const stroke = isBlocked ? '#dc2626' : isSelected ? '#0f766e' : '#0284c7';
     const fill = isBlocked ? '#ef4444' : '#0284c7';
 
-    // 墙体开口白底（切开墙线）+ 两侧门垛短线
-    const isHoriz = geom.wall === 'top' || geom.wall === 'bottom';
+    // 墙体开口白底（切开外墙或室内隔墙）+ 两侧门垛短线
+    const isHoriz = Boolean(geom.isHoriz);
+    const hostWall =
+      geom.wall === 'free' && Array.isArray(items)
+        ? items.find((it) => Geometry.isOpeningHostedOnWallItem(geom, it))
+        : null;
+    let breakStrokeSvg = '';
+    let jambHalf = 5;
+    if (geom.wall === 'free') {
+      if (hostWall) {
+        const hfp = Geometry.getFootprint(hostWall);
+        const breakThick = Math.max(7, (isHoriz ? hfp.d : hfp.w) * scale + 2.5);
+        jambHalf = breakThick / 2 + 1.5;
+        breakStrokeSvg = `<line x1="${v.px1}" y1="${v.py1}" x2="${v.px2}" y2="${v.py2}" stroke="#ffffff" stroke-width="${breakThick}"/>`;
+      } else {
+        jambHalf = 5.5;
+        breakStrokeSvg = `<line x1="${v.px1}" y1="${v.py1}" x2="${v.px2}" y2="${v.py2}" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="3 3"/>`;
+      }
+    } else {
+      breakStrokeSvg = `<line x1="${v.px1}" y1="${v.py1}" x2="${v.px2}" y2="${v.py2}" stroke="#ffffff" stroke-width="6.5"/>`;
+    }
+
     const jambSvg = isHoriz
-      ? `<line x1="${v.px1}" y1="${v.py1 - 5}" x2="${v.px1}" y2="${v.py1 + 5}" stroke="#1e293b" stroke-width="2.2"/>` +
-        `<line x1="${v.px2}" y1="${v.py2 - 5}" x2="${v.px2}" y2="${v.py2 + 5}" stroke="#1e293b" stroke-width="2.2"/>`
-      : `<line x1="${v.px1 - 5}" y1="${v.py1}" x2="${v.px1 + 5}" y2="${v.py1}" stroke="#1e293b" stroke-width="2.2"/>` +
-        `<line x1="${v.px2 - 5}" y1="${v.py2}" x2="${v.px2 + 5}" y2="${v.py2}" stroke="#1e293b" stroke-width="2.2"/>`;
+      ? `<line x1="${v.px1}" y1="${v.py1 - jambHalf}" x2="${v.px1}" y2="${v.py1 + jambHalf}" stroke="#1e293b" stroke-width="2.2"/>` +
+        `<line x1="${v.px2}" y1="${v.py2 - jambHalf}" x2="${v.px2}" y2="${v.py2 + jambHalf}" stroke="#1e293b" stroke-width="2.2"/>`
+      : `<line x1="${v.px1 - jambHalf}" y1="${v.py1}" x2="${v.px1 + jambHalf}" y2="${v.py1}" stroke="#1e293b" stroke-width="2.2"/>` +
+        `<line x1="${v.px2 - jambHalf}" y1="${v.py2}" x2="${v.px2 + jambHalf}" y2="${v.py2}" stroke="#1e293b" stroke-width="2.2"/>`;
 
     let swingSvg = '';
     if (geom.type === 'window') {
@@ -260,7 +283,10 @@
     const midY = (v.py1 + v.py2) / 2;
     let labelX = midX;
     let labelY = midY;
-    if (geom.wall === 'top') labelY = midY + 13;
+    if (geom.wall === 'free') {
+      if (isHoriz) labelY = midY + (geom.swing === 'out' ? 14 : -14);
+      else labelX = midX + (geom.swing === 'out' ? pillW / 2 + 7 : -(pillW / 2 + 7));
+    } else if (geom.wall === 'top') labelY = midY + 13;
     else if (geom.wall === 'bottom') labelY = midY - 13;
     else if (geom.wall === 'left') labelX = midX + pillW / 2 + 6;
     else labelX = midX - pillW / 2 - 6;
@@ -286,7 +312,7 @@
 
     return [
       `<g class="opening-node${isSelected ? ' is-selected' : ''}" data-opening-id="${escapeHtml(op.id)}">`,
-      `<line x1="${v.px1}" y1="${v.py1}" x2="${v.px2}" y2="${v.py2}" stroke="#ffffff" stroke-width="6.5"/>`,
+      breakStrokeSvg,
       swingSvg,
       jambSvg,
       hitStroke,
@@ -567,8 +593,13 @@
     const openingList = Array.isArray(openings) ? openings : [];
     const noteList = Array.isArray(notes) ? notes : [];
     const shellSvg = renderRoomShell(room, metrics);
-    const openingsSvg = openingList
-      .map((op) => renderOpeningItem(op, room, metrics, state, analysis))
+    const outerOpeningsSvg = openingList
+      .filter((op) => op.wall !== 'free')
+      .map((op) => renderOpeningItem(op, room, items, metrics, state, analysis))
+      .join('');
+    const freeOpeningsSvg = openingList
+      .filter((op) => op.wall === 'free')
+      .map((op) => renderOpeningItem(op, room, items, metrics, state, analysis))
       .join('');
     const furnitureSvg = items
       .map((item) => renderFurnitureItem(item, metrics, state, analysis))
@@ -583,7 +614,7 @@
       emptyHint =
         `<g pointer-events="none" opacity="0.72">` +
         `<text x="${cx}" y="${cy - 6}" text-anchor="middle" font-size="14" font-weight="600" fill="#64748b">从左侧拖入或点击家具开始试排</text>` +
-        `<text x="${cx}" y="${cy + 16}" text-anchor="middle" font-size="11.5" fill="#94a3b8">拖动控制点直接改大小 · 双击墙边标门口 · 双击空白加备注</text>` +
+        `<text x="${cx}" y="${cy + 16}" text-anchor="middle" font-size="11.5" fill="#94a3b8">拖动控制点改大小 · 门口可拖到任意位置或隔墙上 · 双击空白加备注</text>` +
         `</g>`;
     }
 
@@ -591,8 +622,9 @@
       defs,
       `<g class="layer-room">${shellSvg}</g>`,
       emptyHint,
-      `<g class="layer-openings">${openingsSvg}</g>`,
+      `<g class="layer-openings">${outerOpeningsSvg}</g>`,
       `<g class="layer-furniture">${furnitureSvg}</g>`,
+      `<g class="layer-free-openings">${freeOpeningsSvg}</g>`,
       `<g class="layer-clearances">${clearancesSvg}</g>`,
       `<g class="layer-notes">${notesSvg}</g>`
     ].join('');

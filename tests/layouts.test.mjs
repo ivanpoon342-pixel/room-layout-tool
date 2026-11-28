@@ -194,4 +194,20 @@ const Layouts = require('../js/layouts.js');
   assert.equal(restored.items[2].catalogId, 'stairs-l');
 }
 
-console.log('ALL LAYOUT STORE TESTS PASSED (7/7 groups)');
+// 8. 任意位置门口（wall: 'free'）持久化与向后兼容
+{
+  const store = Layouts.createEmptyStore();
+  const room = { w: 600, d: 450, h: 280 };
+  const openings = [
+    { id: 'd-outer', type: 'door', wall: 'bottom', offset: 100, width: 85, swing: 'in', hinge: 'start' },
+    { id: 'd-free', type: 'door', name: '隔墙门', wall: 'free', x: 260, y: 140, orientation: 'v', width: 80, swing: 'out', hinge: 'end' }
+  ];
+  const saved = Layouts.saveCurrentLayout(store, { name: '两室', room, items: [], openings });
+  assert.equal(saved.layout.openings.length, 2);
+  assert.equal(saved.layout.openings[1].wall, 'free');
+  assert.equal(saved.layout.openings[1].x, 260);
+  assert.equal(saved.layout.openings[1].y, 140);
+  assert.equal(saved.layout.openings[1].orientation, 'v');
+}
+
+console.log('ALL LAYOUT STORE TESTS PASSED (8/8 groups)');
